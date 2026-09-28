@@ -53,6 +53,17 @@
     "globalSetup": "./tests/globalSetup.js",
     "setupFiles": [
       "./tests/env.js"
+    ],
+    "setupFilesAfterEnv": [
+      "./tests/setup.js"
+    ],
+    "testMatch": [
+      "<rootDir>/tests/**/*.test.js"
     ]
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

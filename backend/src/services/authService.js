@@ -160,23 +160,28 @@ async function refresh(token, meta) {
       throw ApiError.unauthorized('Session expired. Please sign in again.', { code: 'REFRESH_EXPIRED' });
     }
     if (row.revoked_at) {
-      if (row.revoked_seconds_ago !== null && row.revoked_seconds_ago <= REUSE_GRACE_SECONDS) {
-        return { userId: row.user_id, rotated: null };
+      // Parallel requests from the same browser may present a token that was
+      // rotated a moment ago; that is tolerated only for normal rotation and
+      // only while the family has not been flagged as compromised.
+      if (row.revoked_reason === 'rotated' && row.revoked_seconds_ago !== null && row.revoked_seconds_ago <= REUSE_GRACE_SECONDS) {
+        const compromised = await db.queryOne("SELECT id FROM refresh_tokens WHERE family_id = ? AND revoked_reason = 'reuse' LIMIT 1", [row.family_id], conn);
+        if (!compromised) return { userId: row.user_id, rotated: null };
       }
-      await db.query('UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP() WHERE family_id = ? AND revoked_at IS NULL', [row.family_id], conn);
+      await db.query("UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP(), revoked_reason = 'reuse' WHERE family_id = ? AND revoked_at IS NULL", [row.family_id], conn);
       await audit.record({ userId: row.user_id, ip: meta.ip, userAgent: meta.userAgent }, {
         action: 'auth.token_reuse_detected',
         entityType: 'user',
         entityId: row.user_id,
         description: 'A revoked session token was reused; all sessions in the family were signed out',
       }, conn);
-      throw ApiError.unauthorized('Session expired. Please sign in again.', { code: 'REFRESH_REUSED' });
+      // Return (not throw) so the revocation commits; the caller rejects the request.
+      return { reused: true };
     }
 
     const user = await userModel.findAuthById(row.user_id, conn);
     if (!user || !user.is_active) throw ApiError.unauthorized('Account is not active', { code: 'ACCOUNT_INACTIVE' });
 
-    await db.query('UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP() WHERE id = ?', [row.id], conn);
+    await db.query("UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP(), revoked_reason = 'rotated' WHERE id = ?", [row.id], conn);
     const rotated = await createRefreshToken(row.user_id, {
       remember: Boolean(row.remember),
       familyId: row.family_id,
@@ -186,6 +191,7 @@ async function refresh(token, meta) {
     return { userId: row.user_id, rotated };
   });
 
+  if (result.reused) throw ApiError.unauthorized('Session expired. Please sign in again.', { code: 'REFRESH_REUSED' });
   const session = await buildSession(result.userId, meta.branchId);
   return { accessToken: issueAccessToken(session.user), refresh: result.rotated, session };
 }
@@ -194,7 +200,7 @@ async function logout(token, ctx) {
   if (token) {
     const row = await db.queryOne('SELECT family_id, user_id FROM refresh_tokens WHERE token_hash = ?', [sha256(token)]);
     if (row) {
-      await db.query('UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP() WHERE family_id = ? AND revoked_at IS NULL', [row.family_id]);
+      await db.query("UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP(), revoked_reason = 'logout' WHERE family_id = ? AND revoked_at IS NULL", [row.family_id]);
       await audit.record({ ...ctx, userId: ctx?.userId || row.user_id }, { action: 'auth.logout', entityType: 'user', entityId: row.user_id, description: 'Logged out' });
     }
   }
@@ -218,7 +224,7 @@ async function changePassword(userId, { currentPassword, newPassword }, ctx, cur
     await userModel.setPassword(userId, passwordHash, { mustChange: false }, conn);
     // Sign out every other device; keep the current session alive.
     await db.query(
-      'UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP() WHERE user_id = ? AND revoked_at IS NULL AND family_id <> ?',
+      "UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP(), revoked_reason = 'password' WHERE user_id = ? AND revoked_at IS NULL AND family_id <> ?",
       [userId, currentFamily || ''],
       conn,
     );
@@ -275,7 +281,7 @@ async function resetPassword({ token, password }, meta) {
   await db.withTransaction(async (conn) => {
     await userModel.setPassword(row.user_id, passwordHash, { mustChange: false }, conn);
     await db.query('UPDATE password_resets SET used_at = UTC_TIMESTAMP() WHERE user_id = ? AND used_at IS NULL', [row.user_id], conn);
-    await db.query('UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP() WHERE user_id = ? AND revoked_at IS NULL', [row.user_id], conn);
+    await db.query("UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP(), revoked_reason = 'password' WHERE user_id = ? AND revoked_at IS NULL", [row.user_id], conn);
     await audit.record({ userId: row.user_id, ip: meta.ip, userAgent: meta.userAgent }, {
       action: 'auth.password_reset', entityType: 'user', entityId: row.user_id, description: 'Password reset with emailed link',
     }, conn);

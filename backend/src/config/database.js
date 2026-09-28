@@ -47,27 +47,41 @@ async function queryOne(sql, params = [], conn = null) {
   return rows[0] || null;
 }
 
+// InnoDB resolves lock cycles by rolling one transaction back; that
+// transaction is safe to run again from the start.
+const RETRYABLE = new Set(['ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT']);
+const MAX_ATTEMPTS = 3;
+
 /**
- * Execute `work(conn)` inside a database transaction. Commits when the
- * callback resolves and rolls back when it throws, so multi-step business
- * operations (sales, refunds, purchases...) are never partially saved.
+ * Run `work(conn)` in a transaction: commit on success, roll back on error,
+ * so multi-step business operations (sales, refunds, purchases...) are never
+ * partially saved. Deadlocks between concurrent requests are retried
+ * automatically, so work must only change the database (side effects belong
+ * after the commit).
  */
 async function withTransaction(work) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-    const result = await work(conn);
-    await conn.commit();
-    return result;
-  } catch (error) {
+  for (let attempt = 1; ; attempt += 1) {
+    const conn = await pool.getConnection();
     try {
-      await conn.rollback();
-    } catch (rollbackError) {
-      logger.error({ err: rollbackError }, 'Transaction rollback failed');
+      await conn.beginTransaction();
+      const result = await work(conn);
+      await conn.commit();
+      return result;
+    } catch (error) {
+      try {
+        await conn.rollback();
+      } catch (rollbackError) {
+        logger.error({ err: rollbackError }, 'Transaction rollback failed');
+      }
+      if (RETRYABLE.has(error.code) && attempt < MAX_ATTEMPTS) {
+        logger.warn({ code: error.code, attempt }, 'Transaction conflict — retrying');
+        await new Promise((resolve) => setTimeout(resolve, 20 * attempt + Math.floor(Math.random() * 30)));
+        continue;
+      }
+      throw error;
+    } finally {
+      conn.release();
     }
-    throw error;
-  } finally {
-    conn.release();
   }
 }
 

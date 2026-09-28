@@ -81,7 +81,7 @@ async function update(id, data, ctx) {
     await userModel.update(id, data, conn);
     await linkEmployee(id, data.employeeId, conn);
     if (data.isActive === false) {
-      await db.query('UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP() WHERE user_id = ? AND revoked_at IS NULL', [id], conn);
+      await db.query("UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP(), revoked_reason = 'admin' WHERE user_id = ? AND revoked_at IS NULL", [id], conn);
     }
     const roleChanged = data.roleId && data.roleId !== existing.roleId;
     await audit.record(ctx, {
@@ -101,7 +101,7 @@ async function resetPassword(id, password, ctx) {
   const passwordHash = await authService.hashPassword(password);
   await db.withTransaction(async (conn) => {
     await userModel.setPassword(id, passwordHash, { mustChange: true }, conn);
-    await db.query('UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP() WHERE user_id = ? AND revoked_at IS NULL', [id], conn);
+    await db.query("UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP(), revoked_reason = 'admin' WHERE user_id = ? AND revoked_at IS NULL", [id], conn);
     await audit.record(ctx, { action: 'user.password_reset', entityType: 'user', entityId: id, description: `Reset password for ${user.fullName}` }, conn);
   });
 }

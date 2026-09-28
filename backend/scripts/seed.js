@@ -89,8 +89,11 @@ async function seedDemo(conn) {
 
   // Historical appointments & sales are generated through the real services
   // so every demo sale has consistent items, payments, stock and loyalty rows.
-  const generateActivity = require('./demo/generateActivity');
-  await generateActivity();
+  // SEED_DEMO_ACTIVITY=false loads the demo records without generated history (used by the tests).
+  if (process.env.SEED_DEMO_ACTIVITY !== 'false') {
+    const generateActivity = require('./demo/generateActivity');
+    await generateActivity();
+  }
 }
 
 async function seed() {
