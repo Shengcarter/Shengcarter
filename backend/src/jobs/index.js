@@ -3,6 +3,8 @@
 const cron = require('node-cron');
 const logger = require('../config/logger');
 const messaging = require('../services/messaging');
+const appointmentService = require('../services/appointmentService');
+const notificationService = require('../services/notificationService');
 
 /**
  * Background jobs. Each job guards against overlapping runs and logs failures
@@ -28,6 +30,8 @@ function guarded(name, fn) {
 
 const JOBS = [
   { name: 'message-queue', schedule: '*/30 * * * * *', run: () => messaging.processQueue() },
+  { name: 'appointment-reminders', schedule: '*/5 * * * *', run: () => appointmentService.sendDueReminders() },
+  { name: 'notification-cleanup', schedule: '30 3 * * *', run: () => notificationService.prune() },
 ];
 
 function register(job) {

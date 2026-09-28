@@ -20,8 +20,8 @@ export function PageLoader() {
   );
 }
 
-export function Skeleton({ className }) {
-  return <div className={cn('skeleton h-4', className)} aria-hidden />;
+export function Skeleton({ className, style }) {
+  return <div className={cn('skeleton h-4', className)} style={style} aria-hidden />;
 }
 
 export function SkeletonRows({ rows = 5, className }) {

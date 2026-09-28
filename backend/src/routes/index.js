@@ -10,6 +10,11 @@ const authRoutes = require('./authRoutes');
 const publicRoutes = require('./publicRoutes');
 const admin = require('./adminRoutes');
 const { notificationRouter, searchRouter, messageRouter } = require('./notificationRoutes');
+const customerRoutes = require('./customerRoutes');
+const { categoryRouter, serviceRouter } = require('./serviceRoutes');
+const { employeeRouter, attendanceRouter, leaveRouter } = require('./employeeRoutes');
+const appointmentRoutes = require('./appointmentRoutes');
+const loyaltyRoutes = require('./loyaltyRoutes');
 
 /**
  * API route map. Everything below `authenticate` requires a valid access token;
@@ -41,5 +46,13 @@ router.use('/activity-logs', admin.activityRouter);
 router.use('/notifications', notificationRouter);
 router.use('/search', searchRouter);
 router.use('/messages', messageRouter);
+router.use('/customers', customerRoutes);
+router.use('/service-categories', categoryRouter);
+router.use('/services', serviceRouter);
+router.use('/employees', employeeRouter);
+router.use('/attendance', attendanceRouter);
+router.use('/leave', leaveRouter);
+router.use('/appointments', appointmentRoutes);
+router.use('/loyalty', loyaltyRoutes);
 
 module.exports = router;

@@ -14,6 +14,13 @@ const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage'));
 const ProfilePage = lazy(() => import('../pages/ProfilePage'));
 const NotificationsPage = lazy(() => import('../features/notifications/NotificationsPage'));
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage'));
+const CustomersPage = lazy(() => import('../features/customers/CustomersPage'));
+const CustomerProfilePage = lazy(() => import('../features/customers/CustomerProfilePage'));
+const ServicesPage = lazy(() => import('../features/services/ServicesPage'));
+const EmployeesPage = lazy(() => import('../features/employees/EmployeesPage'));
+const EmployeeProfilePage = lazy(() => import('../features/employees/EmployeeProfilePage'));
+const AppointmentsPage = lazy(() => import('../features/appointments/AppointmentsPage'));
+const CheckInPage = lazy(() => import('../pages/CheckInPage'));
 
 const guard = (permission, element) => <RequirePermission permission={permission}>{element}</RequirePermission>;
 
@@ -30,6 +37,8 @@ export const router = createBrowserRouter([
       { path: '/reset-password', element: <ResetPasswordPage /> },
     ],
   },
+  // Opened by scanning an appointment QR code (public; staff can check in).
+  { path: '/check-in/:token', element: <CheckInPage /> },
   {
     path: '/change-password',
     element: (
@@ -49,6 +58,12 @@ export const router = createBrowserRouter([
       { index: true, element: <HomeRedirect><DashboardPage /></HomeRedirect> },
       { path: 'profile', element: <ProfilePage /> },
       { path: 'notifications', element: <NotificationsPage /> },
+      { path: 'customers', element: guard('customers.view', <CustomersPage />) },
+      { path: 'customers/:id', element: guard('customers.view', <CustomerProfilePage />) },
+      { path: 'services', element: guard('services.view', <ServicesPage />) },
+      { path: 'employees', element: guard('employees.view', <EmployeesPage />) },
+      { path: 'employees/:id', element: guard('employees.view', <EmployeeProfilePage />) },
+      { path: 'appointments', element: guard(['appointments.view', 'appointments.view_own'], <AppointmentsPage />) },
       {
         path: 'settings/*',
         element: guard(['settings.manage', 'users.manage', 'roles.manage', 'branches.manage', 'audit.view', 'backups.manage', 'loyalty.manage'], <SettingsPage />),

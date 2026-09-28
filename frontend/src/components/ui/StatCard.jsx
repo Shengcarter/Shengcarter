@@ -28,7 +28,7 @@ export function StatCard({ label, value, icon: Icon, caption, trend, tone = 'gol
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex min-h-9 items-center justify-between gap-3">
         <span className="text-sm font-medium text-muted">{label}</span>
         {Icon ? (
           <span className={cn('flex size-9 items-center justify-center rounded-xl ring-1', toneClass)}>
@@ -39,7 +39,7 @@ export function StatCard({ label, value, icon: Icon, caption, trend, tone = 'gol
       {loading ? (
         <Skeleton className="h-8 w-28" />
       ) : (
-        <div className="font-display text-2xl font-semibold tracking-tight text-fg tabular-nums sm:text-[1.7rem]">{value}</div>
+        <div className="text-2xl font-semibold tracking-tight text-fg sm:text-[1.65rem]">{value}</div>
       )}
       {caption || trend !== undefined ? (
         <div className="flex items-center gap-2 text-xs text-muted">

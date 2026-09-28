@@ -178,9 +178,13 @@
     display: block !important;
   }
 
-  .print-area {
-    position: absolute;
-    inset: 0;
+  /* While a document (receipt, invoice, slip) is being printed, hide the app. */
+  body.has-print-area > #root {
+    display: none !important;
+  }
+
+  body.has-print-area .print-area {
+    display: block !important;
     margin: 0;
     padding: 0;
     background: #fff;
@@ -188,10 +192,21 @@
   }
 
   body.printing-thermal .print-area {
-    width: 76mm;
+    width: 72mm;
   }
 }
 
-.print-only {
+/* Thermal receipts use an 80 mm roll page. */
+@page thermal {
+  size: 80mm auto;
+  margin: 3mm;
+}
+
+body.printing-thermal .print-area {
+  page: thermal;
+}
+
+.print-only,
+.print-area {
   display: none;
 }

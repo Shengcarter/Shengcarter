@@ -46,7 +46,8 @@ async function enqueue({ channel, recipient, subject = null, body, template = nu
  * the event in Settings → Notifications (e.g. appointment_confirmation).
  */
 async function notifyCustomer(event, customer, variables, meta = {}, conn = null) {
-  if (!customer) return [];
+  // Customers who chose "no messages" never receive automated notifications.
+  if (!customer || customer.preferred_channel === 'none') return [];
   const channels = settings.get('notifications.channels')?.[event] || [];
   const template = settings.get('notifications.templates')?.[event];
   if (!channels.length || !template) return [];
