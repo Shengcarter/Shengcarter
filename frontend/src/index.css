@@ -1,0 +1,197 @@
+@import 'tailwindcss';
+
+/* Class-based dark mode: <html class="dark"> */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Brand palette — ZOLA STYLISH MANAGEMENT SYSTEM
+   Gold #D4AF37 · Black #0F0F0F · White #FFFFFF · Soft Pink #F7D7DA
+   --------------------------------------------------------------------------- */
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
+
+  --color-gold-50: #fbf7e8;
+  --color-gold-100: #f6ecc6;
+  --color-gold-200: #eedb95;
+  --color-gold-300: #e5c863;
+  --color-gold-400: #dcbb4a;
+  --color-gold-500: #d4af37;
+  --color-gold-600: #b8952a;
+  --color-gold-700: #957621;
+  --color-gold-800: #72591b;
+  --color-gold-900: #4e3d13;
+
+  --color-blush-50: #fdf5f6;
+  --color-blush-100: #fbecee;
+  --color-blush-200: #f7d7da;
+  --color-blush-300: #efb5bb;
+  --color-blush-400: #e48d97;
+  --color-blush-500: #d66573;
+
+  --color-ink-950: #0f0f0f;
+  --color-ink-900: #151516;
+  --color-ink-850: #1b1b1d;
+  --color-ink-800: #222225;
+  --color-ink-700: #2e2e32;
+  --color-ink-600: #45454a;
+
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+}
+
+/* Semantic surface tokens (switch with the theme). */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+}
+
+:root {
+  --canvas: #f8f6f2;
+  --surface: #ffffff;
+  --surface-2: #f4f0e9;
+  --surface-3: #ebe5da;
+  --line: #e5ded2;
+  --fg: #0f0f0f;
+  --muted: #625d55;
+  /* Darker gold for text on light surfaces to keep WCAG AA contrast. */
+  --accent: #8a6d1d;
+  --accent-fg: #0f0f0f;
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #b91c1c;
+  --info: #1d4ed8;
+  color-scheme: light;
+}
+
+.dark {
+  --canvas: #0b0b0c;
+  --surface: #141416;
+  --surface-2: #1b1b1e;
+  --surface-3: #242428;
+  --line: #2b2b30;
+  --fg: #f4f1ec;
+  --muted: #a29d94;
+  --accent: #d4af37;
+  --accent-fg: #0f0f0f;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-fg antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-gold-500);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-gold-500) 35%, transparent);
+  }
+
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-surface;
+  }
+
+  .gold-text {
+    background: linear-gradient(135deg, #f1d77a 0%, #d4af37 45%, #a8841f 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+    background-size: 200% 100%;
+    @apply animate-shimmer rounded-lg;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface-3) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Printing: hide the application chrome and print only the document.
+   --------------------------------------------------------------------------- */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .no-print,
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-area {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: #000;
+  }
+
+  body.printing-thermal .print-area {
+    width: 76mm;
+  }
+}
+
+.print-only {
+  display: none;
+}
