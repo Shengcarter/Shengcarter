@@ -13,6 +13,7 @@ const settingsService = require('../services/settingsService');
 const auditService = require('../services/auditService');
 const messaging = require('../services/messaging');
 const { localDateRange } = require('../utils/time');
+const backupService = require('../services/backupService');
 
 // ---- Users ------------------------------------------------------------------
 const users = {
@@ -90,6 +91,8 @@ const settings = {
   },
   async updateGroup(req, res) {
     const data = await settingsService.updateGroup(req.params.group, req.body, req.ctx);
+    // The backup schedule depends on the backup settings and the time zone.
+    if (['backup', 'system'].includes(req.params.group)) backupService.schedule();
     sendSuccess(res, data, 'Settings saved successfully');
   },
   async uploadLogo(req, res) {

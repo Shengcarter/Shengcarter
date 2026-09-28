@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Users } from 'lucide-react';
 import { Avatar, Button, Card, DataTable, EmptyState, PageHeader, Pagination, SearchInput } from '../../components/ui';
 import { formatDate, formatMoney, formatNumber } from '../../utils/format';
@@ -20,6 +20,14 @@ export default function CustomersPage() {
   const [params, setParams] = useState({ page: 1, limit: 20, search: '', sortBy: 'createdAt', sortOrder: 'desc', visited: '', gender: '' });
   const [creating, setCreating] = useState(false);
   const customers = useCustomers(params);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Deep link from the dashboard: /customers?new=1 opens the form.
+  useEffect(() => {
+    if (!searchParams.get('new')) return;
+    if (can('customers.create')) setCreating(true);
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams, can]);
 
   const columns = [
     {

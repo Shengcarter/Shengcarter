@@ -27,6 +27,7 @@ const SaleDetailPage = lazy(() => import('../features/pos/SaleDetailPage'));
 const InventoryPage = lazy(() => import('../features/inventory/InventoryPage'));
 const SuppliersPage = lazy(() => import('../features/suppliers/SuppliersPage'));
 const ExpensesPage = lazy(() => import('../features/expenses/ExpensesPage'));
+const ReportsPage = lazy(() => import('../features/reports/ReportsPage'));
 
 const guard = (permission, element) => <RequirePermission permission={permission}>{element}</RequirePermission>;
 
@@ -76,6 +77,7 @@ export const router = createBrowserRouter([
       { path: 'inventory', element: guard('inventory.view', <InventoryPage />) },
       { path: 'suppliers', element: guard(['suppliers.view', 'purchases.view'], <SuppliersPage />) },
       { path: 'expenses', element: guard('expenses.view', <ExpensesPage />) },
+      { path: 'reports', element: guard(['reports.view', 'reports.financial', 'insights.view'], <ReportsPage />) },
       {
         path: 'settings/*',
         element: guard(['settings.manage', 'users.manage', 'roles.manage', 'branches.manage', 'audit.view', 'backups.manage', 'loyalty.manage'], <SettingsPage />),

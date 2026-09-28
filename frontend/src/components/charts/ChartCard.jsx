@@ -11,7 +11,7 @@ import { cn } from '../../utils/cn';
  *
  * table: { columns: [{ key, header, format?, align? }], rows: [] }
  */
-export function ChartCard({ title, description, action, loading, fetching, error, onRetry, empty, isEmpty, table, height = 260, children, className }) {
+export function ChartCard({ title, description, action, loading, fetching, error, onRetry, empty, isEmpty, table, height = 260, fill = false, children, className }) {
   const [view, setView] = useState('chart');
 
   let body;
@@ -19,7 +19,8 @@ export function ChartCard({ title, description, action, loading, fetching, error
   else if (error) body = <ErrorState error={error} onRetry={onRetry} />;
   else if (isEmpty) body = empty || <EmptyState title="No data for this period" className="py-10" />;
   else if (view === 'table' && table) body = <ChartTable table={table} />;
-  else body = <div style={{ height }}>{children}</div>;
+  // `fill` lets the chart grow with its card (e.g. when a grid row is taller).
+  else body = fill ? <div className="h-full" style={{ minHeight: height }}>{children}</div> : <div style={{ height }}>{children}</div>;
 
   return (
     <Card className={cn('flex flex-col', className)}>
@@ -53,7 +54,7 @@ export function ChartCard({ title, description, action, loading, fetching, error
           ) : null}
         </div>
       </div>
-      <div className={cn('flex-1 px-3 pb-4 transition-opacity sm:px-4', fetching && !loading && 'opacity-60')}>{body}</div>
+      <div className={cn('flex-1 px-3 pb-4 transition-opacity sm:px-4', fill && 'flex flex-col [&>*]:flex-1', fetching && !loading && 'opacity-60')}>{body}</div>
     </Card>
   );
 }

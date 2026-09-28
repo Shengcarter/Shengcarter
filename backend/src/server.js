@@ -7,6 +7,7 @@ const db = require('./config/database');
 const createApp = require('./app');
 const settingsService = require('./services/settingsService');
 const jobs = require('./jobs');
+const backupService = require('./services/backupService');
 
 function lanAddresses() {
   return Object.values(os.networkInterfaces())
@@ -39,7 +40,10 @@ async function start() {
     }
   });
 
-  if (config.jobsEnabled) jobs.start();
+  if (config.jobsEnabled) {
+    jobs.start();
+    backupService.schedule();
+  }
 
   const shutdown = (signal) => {
     logger.info(`${signal} received — shutting down gracefully`);

@@ -87,6 +87,14 @@ api.interceptors.response.use(
         useAuthStore.getState().clearSession({ expired: true });
       }
     }
+    // File downloads receive errors as a Blob; read the JSON message inside.
+    if (response?.data instanceof Blob && response.data.type.includes('json')) {
+      try {
+        response.data = JSON.parse(await response.data.text());
+      } catch {
+        // Keep the generic message.
+      }
+    }
     if (response?.status === 403 && response.data?.code === 'PASSWORD_CHANGE_REQUIRED') {
       useAuthStore.getState().requirePasswordChange();
     }
@@ -116,7 +124,7 @@ export const http = {
 
 /** Download a file (PDF / Excel / CSV) from an authenticated endpoint. */
 export async function downloadFile(url, params, fallbackName = 'download') {
-  const res = await api.get(url, { params, responseType: 'blob' });
+  const res = await api.get(url, { params, responseType: 'blob', timeout: 120_000 });
   const disposition = res.headers['content-disposition'] || '';
   const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
   const filename = match ? decodeURIComponent(match[1]) : fallbackName;

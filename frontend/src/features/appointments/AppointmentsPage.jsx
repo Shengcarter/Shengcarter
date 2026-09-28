@@ -88,7 +88,7 @@ export default function AppointmentsPage() {
   const hours = useMemo(() => visibleHours(settings.system?.business_hours), [settings.system?.business_hours]);
   const slotMinutes = settings.system?.slot_interval_minutes || 15;
 
-  // Deep links: ?appointment=12 opens the drawer; ?new=1&customer=5 opens the form.
+  // Deep links: ?appointment=12 opens the drawer; ?new=1&customer=5 opens the form; ?checkin=1 opens the scanner.
   useEffect(() => {
     const appointment = Number(searchParams.get('appointment'));
     if (appointment) setOpenId(appointment);
@@ -103,7 +103,8 @@ export default function AppointmentsPage() {
         setForm({ open: true, appointment: null, preset: { date: todayISO() } });
       }
     }
-    if (appointment || searchParams.get('new')) setSearchParams({}, { replace: true });
+    if (searchParams.get('checkin') && can('appointments.checkin')) setCheckInOpen(true);
+    if (appointment || searchParams.get('new') || searchParams.get('checkin')) setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams, can]);
 
   const canDrag = useCallback((event) => can('appointments.update') && EDITABLE_STATUSES.includes(event.status), [can]);

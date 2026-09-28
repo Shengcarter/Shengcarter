@@ -1,6 +1,6 @@
 import { Suspense, lazy, useMemo } from 'react';
 import { NavLink, Navigate, useParams } from 'react-router-dom';
-import { Building, Building2, CircleDollarSign, Cog, Gift, History, Plug, ShieldCheck, BellRing, Users } from 'lucide-react';
+import { Building, Building2, CircleDollarSign, Cog, DatabaseBackup, Gift, History, Plug, ShieldCheck, BellRing, Users } from 'lucide-react';
 import { PageHeader, PageLoader, SkeletonRows, ErrorState } from '../../components/ui';
 import { usePermission, useDocumentTitle } from '../../hooks';
 import { cn } from '../../utils/cn';
@@ -16,6 +16,7 @@ const ActivityLogSettings = lazy(() => import('./ActivityLogSettings').then((m) 
 const NotificationSettings = lazy(() => import('./NotificationSettings').then((m) => ({ default: m.NotificationSettings })));
 const IntegrationSettings = lazy(() => import('./IntegrationSettings').then((m) => ({ default: m.IntegrationSettings })));
 const LoyaltySettings = lazy(() => import('./LoyaltySettings').then((m) => ({ default: m.LoyaltySettings })));
+const BackupSettings = lazy(() => import('./BackupSettings').then((m) => ({ default: m.BackupSettings })));
 
 /** Sections that edit a settings group need the admin settings payload. */
 const SECTIONS = [
@@ -28,6 +29,7 @@ const SECTIONS = [
   { slug: 'users', label: 'Users', icon: Users, permission: 'users.manage', component: UsersSettings },
   { slug: 'roles', label: 'Roles & permissions', icon: ShieldCheck, permission: 'roles.manage', component: RolesSettings },
   { slug: 'branches', label: 'Branches', icon: Building2, permission: 'branches.manage', component: BranchesSettings },
+  { slug: 'backups', label: 'Backups', icon: DatabaseBackup, permission: 'backups.manage', component: BackupSettings },
   { slug: 'activity', label: 'Activity log', icon: History, permission: 'audit.view', component: ActivityLogSettings },
 ];
 

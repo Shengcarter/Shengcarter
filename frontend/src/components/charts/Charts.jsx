@@ -116,7 +116,7 @@ export function ColumnChart({ data, xKey, yKey, label, formatValue, formatX, hei
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barCategoryGap="25%">
         <CartesianGrid vertical={false} stroke={theme.grid} />
         <XAxis dataKey={xKey} {...axisProps(theme)} tickFormatter={formatX} minTickGap={12} />
-        <YAxis {...axisProps(theme)} axisLine={false} width={48} allowDecimals={false} tickFormatter={(v) => (formatValue ? formatValue(v, 'axis') : v)} />
+        <YAxis {...axisProps(theme)} axisLine={false} width={formatValue ? 64 : 40} allowDecimals={false} tickFormatter={(v) => (formatValue ? formatValue(v, 'axis') : v)} />
         <Tooltip cursor={{ fill: theme.grid, opacity: 0.5 }} content={<TooltipContent formatValue={formatValue} formatLabel={formatX} />} />
         <Bar dataKey={yKey} name={label} fill={theme.series[0]} maxBarSize={24} radius={[4, 4, 0, 0]} />
       </BarChart>

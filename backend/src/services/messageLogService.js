@@ -1,5 +1,6 @@
 'use strict';
 
+const { DateTime } = require('luxon');
 const db = require('../config/database');
 const ApiError = require('../utils/ApiError');
 const { camelizeRows } = require('../utils/case');
@@ -8,6 +9,7 @@ const { contains } = require('../utils/sql');
 const messaging = require('./messaging');
 const settings = require('./settingsService');
 const audit = require('./auditService');
+const { todayLocal } = require('../utils/time');
 
 const MAX_RECIPIENTS = 2000;
 
@@ -41,7 +43,7 @@ async function list(filters) {
   return { ...result, rows: camelizeRows(result.rows) };
 }
 
-async function resolveAudience({ audience, customerIds, tierId, channel }) {
+async function resolveAudience({ audience, customerIds, tierId, channel, inactiveDays = 60 }) {
   const contactColumn = channel === 'email' ? 'c.email' : 'c.phone';
   const where = ['c.deleted_at IS NULL', `${contactColumn} IS NOT NULL`, `${contactColumn} <> ''`];
   const params = [];
@@ -53,6 +55,15 @@ async function resolveAudience({ audience, customerIds, tierId, channel }) {
   } else {
     // Promotions only go to customers who agreed to marketing messages.
     where.push('c.marketing_opt_in = 1');
+    if (audience === 'inactive') {
+      // Win-back: customers who have visited before but not recently.
+      where.push('c.visit_count >= 1', 'c.last_visit_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)');
+      params.push(inactiveDays);
+    } else if (audience === 'birthday') {
+      const today = DateTime.fromISO(todayLocal());
+      where.push("DATE_FORMAT(c.date_of_birth, '%m-%d') IN (?)");
+      params.push(Array.from({ length: 7 }, (_, i) => today.plus({ days: i }).toFormat('MM-dd')));
+    }
     if (audience === 'tier') {
       const tier = await db.queryOne('SELECT min_points FROM loyalty_tiers WHERE id = ?', [tierId]);
       if (!tier) throw ApiError.validation([{ field: 'tierId', message: 'Choose a loyalty tier' }]);

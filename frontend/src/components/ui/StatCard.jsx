@@ -42,14 +42,14 @@ export function StatCard({ label, value, icon: Icon, caption, trend, tone = 'gol
         <div className="text-lg font-semibold tracking-tight break-words text-fg @[10rem]:text-xl @[13rem]:text-2xl @[16rem]:text-[1.65rem]">{value}</div>
       )}
       {caption || trend !== undefined ? (
-        <div className="flex items-center gap-2 text-xs text-muted">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
           {trend !== undefined && trend !== null ? (
             <span className={cn('inline-flex items-center gap-0.5 font-medium', trend >= 0 ? 'text-success' : 'text-danger')}>
               {trend >= 0 ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}
               {Math.abs(trend).toFixed(1)}%
             </span>
           ) : null}
-          {caption ? <span className="truncate">{caption}</span> : null}
+          {caption ? <span className="min-w-0">{caption}</span> : null}
         </div>
       ) : null}
     </Tag>

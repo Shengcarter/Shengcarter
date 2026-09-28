@@ -8,7 +8,7 @@ import { formatDateTime, titleCase } from '../../utils/format';
 import { useApiMutation } from '../settings/api';
 
 function SendMessageModal({ open, onClose }) {
-  const [form, setForm] = useState({ channel: 'sms', audience: 'all_opted_in', tierId: '', subject: '', message: '' });
+  const [form, setForm] = useState({ channel: 'sms', audience: 'all_opted_in', tierId: '', inactiveDays: '60', subject: '', message: '' });
   const tiers = useQuery({ queryKey: ['loyalty-tiers'], queryFn: () => http.get('/loyalty/tiers').then((r) => r.data), enabled: open, retry: false });
   const send = useApiMutation((body) => http.post('/messages/send', body), [['messages']]);
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -19,6 +19,7 @@ function SendMessageModal({ open, onClose }) {
         channel: form.channel,
         audience: form.audience,
         tierId: form.audience === 'tier' ? Number(form.tierId) : undefined,
+        inactiveDays: form.audience === 'inactive' ? Number(form.inactiveDays) : undefined,
         subject: form.channel === 'email' ? form.subject : undefined,
         message: form.message,
       });
@@ -51,9 +52,20 @@ function SendMessageModal({ open, onClose }) {
           onChange={set('audience')}
           options={[
             { value: 'all_opted_in', label: 'All opted-in customers' },
+            { value: 'inactive', label: 'Customers who have not visited recently' },
+            { value: 'birthday', label: 'Birthdays in the next 7 days' },
             ...(tiers.data?.length ? [{ value: 'tier', label: 'A loyalty tier' }] : []),
           ]}
         />
+        {form.audience === 'inactive' ? (
+          <Select
+            className="sm:col-span-2"
+            label="Last visit more than"
+            value={form.inactiveDays}
+            onChange={set('inactiveDays')}
+            options={[{ value: '30', label: '30 days ago' }, { value: '60', label: '60 days ago' }, { value: '90', label: '90 days ago' }, { value: '180', label: '6 months ago' }]}
+          />
+        ) : null}
         {form.audience === 'tier' ? (
           <Select className="sm:col-span-2" label="Loyalty tier" placeholder="Choose tier" value={form.tierId} onChange={set('tierId')} options={(tiers.data || []).map((t) => ({ value: t.id, label: t.name }))} />
         ) : null}

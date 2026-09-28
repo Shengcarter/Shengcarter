@@ -62,9 +62,10 @@ messageRouter.post(
   validate({
     body: z.object({
       channel: z.enum(['email', 'sms', 'whatsapp']),
-      audience: z.enum(['selected', 'all_opted_in', 'tier']),
+      audience: z.enum(['selected', 'all_opted_in', 'tier', 'inactive', 'birthday']),
       customerIds: z.array(id).max(2000).optional(),
       tierId: optionalId,
+      inactiveDays: z.coerce.number().int().min(14).max(730).optional(),
       subject: z.string().trim().max(200).optional(),
       message: z.string().trim().min(1, 'Message is required').max(1000, 'Maximum 1000 characters'),
     }),

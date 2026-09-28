@@ -46,4 +46,15 @@ const publicLimiter = rateLimit({
   message: message('Too many requests. Please try again in a minute.'),
 });
 
-module.exports = { apiLimiter, loginLimiter, passwordResetLimiter, publicLimiter };
+/** Expensive work (report exports, AI summaries, backups): per signed-in user. */
+const heavyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  skip,
+  keyGenerator: (req) => (req.user ? `user:${req.user.id}` : ipKeyGenerator(req.ip)),
+  message: message('Too many requests. Please wait a minute and try again.'),
+});
+
+module.exports = { apiLimiter, loginLimiter, passwordResetLimiter, publicLimiter, heavyLimiter };
