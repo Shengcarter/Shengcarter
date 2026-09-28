@@ -16,6 +16,7 @@ import { employeeApi, employeeKeys, useEmployee, useEmployeePerformance } from '
 import { EmployeeFormModal } from './EmployeeFormModal';
 import { ScheduleEditor } from './ScheduleEditor';
 import { LeavePanel } from './LeavePanel';
+import { PayrollPanel } from './PayrollPanel';
 
 const RANGES = [
   { value: 'month', label: 'This month' },
@@ -193,6 +194,7 @@ export default function EmployeeProfilePage() {
     { value: 'schedule', label: 'Schedule' },
     { value: 'services', label: 'Services', count: e.services.length },
     ...(can(['leave.manage', 'employees.view']) ? [{ value: 'leave', label: 'Leave' }] : []),
+    ...(can('payroll.manage') ? [{ value: 'payroll', label: 'Salary & commission' }] : []),
   ];
 
   const uploadPhoto = async (file) => {
@@ -267,6 +269,7 @@ export default function EmployeeProfilePage() {
       {tab === 'schedule' ? <ScheduleEditor employeeId={e.id} schedule={e.schedule} canEdit={manage} /> : null}
       {tab === 'services' ? <ServicesPanel employee={e} canEdit={manage} /> : null}
       {tab === 'leave' ? <LeavePanel employeeId={e.id} /> : null}
+      {tab === 'payroll' ? <PayrollPanel employee={e} /> : null}
 
       <EmployeeFormModal open={editing} onClose={() => setEditing(false)} employee={e} />
       <ConfirmDialog

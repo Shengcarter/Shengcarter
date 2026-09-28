@@ -44,7 +44,7 @@ function moneyFormatter(locale, currency, decimals) {
 export function formatMoney(amount, { compact = false } = {}) {
   const { currency, decimals, locale } = getFormatSettings();
   const value = Number(amount || 0);
-  if (compact && Math.abs(value) >= 100_000) {
+  if (compact && Math.abs(value) >= 1_000) {
     return new Intl.NumberFormat(locale, { style: 'currency', currency, notation: 'compact', maximumFractionDigits: 1 }).format(value);
   }
   return moneyFormatter(locale, currency, decimals).format(value);

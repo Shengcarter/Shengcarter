@@ -55,7 +55,7 @@ export function DataTable({
                     className={cn('px-4 py-3 font-medium whitespace-nowrap', column.align === 'right' && 'text-right', column.headerClassName)}
                   >
                     {column.sortable && onSortChange ? (
-                      <button type="button" onClick={() => toggleSort(column)} className="inline-flex items-center gap-1 hover:text-fg">
+                      <button type="button" onClick={() => toggleSort(column)} className="inline-flex items-center gap-1 tracking-wide uppercase hover:text-fg">
                         {column.header}
                         {active ? (sort.sortOrder === 'asc' ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />) : null}
                       </button>

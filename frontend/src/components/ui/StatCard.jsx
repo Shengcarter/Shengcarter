@@ -23,7 +23,7 @@ export function StatCard({ label, value, icon: Icon, caption, trend, tone = 'gol
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.04, duration: 0.3 }}
       className={cn(
-        'card flex w-full flex-col gap-3 p-4 text-left sm:p-5',
+        'card @container flex w-full min-w-0 flex-col gap-3 p-4 text-left sm:p-5',
         onClick && 'transition-colors hover:border-gold-500/40',
         className,
       )}
@@ -39,7 +39,7 @@ export function StatCard({ label, value, icon: Icon, caption, trend, tone = 'gol
       {loading ? (
         <Skeleton className="h-8 w-28" />
       ) : (
-        <div className="text-2xl font-semibold tracking-tight text-fg sm:text-[1.65rem]">{value}</div>
+        <div className="text-lg font-semibold tracking-tight break-words text-fg @[10rem]:text-xl @[13rem]:text-2xl @[16rem]:text-[1.65rem]">{value}</div>
       )}
       {caption || trend !== undefined ? (
         <div className="flex items-center gap-2 text-xs text-muted">

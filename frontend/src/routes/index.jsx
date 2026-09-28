@@ -21,6 +21,12 @@ const EmployeesPage = lazy(() => import('../features/employees/EmployeesPage'));
 const EmployeeProfilePage = lazy(() => import('../features/employees/EmployeeProfilePage'));
 const AppointmentsPage = lazy(() => import('../features/appointments/AppointmentsPage'));
 const CheckInPage = lazy(() => import('../pages/CheckInPage'));
+const PosPage = lazy(() => import('../features/pos/PosPage'));
+const SalesPage = lazy(() => import('../features/pos/SalesPage'));
+const SaleDetailPage = lazy(() => import('../features/pos/SaleDetailPage'));
+const InventoryPage = lazy(() => import('../features/inventory/InventoryPage'));
+const SuppliersPage = lazy(() => import('../features/suppliers/SuppliersPage'));
+const ExpensesPage = lazy(() => import('../features/expenses/ExpensesPage'));
 
 const guard = (permission, element) => <RequirePermission permission={permission}>{element}</RequirePermission>;
 
@@ -64,6 +70,12 @@ export const router = createBrowserRouter([
       { path: 'employees', element: guard('employees.view', <EmployeesPage />) },
       { path: 'employees/:id', element: guard('employees.view', <EmployeeProfilePage />) },
       { path: 'appointments', element: guard(['appointments.view', 'appointments.view_own'], <AppointmentsPage />) },
+      { path: 'pos', element: guard('pos.create', <PosPage />) },
+      { path: 'pos/sales', element: guard('sales.view', <SalesPage />) },
+      { path: 'pos/sales/:id', element: guard(['sales.view', 'pos.create'], <SaleDetailPage />) },
+      { path: 'inventory', element: guard('inventory.view', <InventoryPage />) },
+      { path: 'suppliers', element: guard(['suppliers.view', 'purchases.view'], <SuppliersPage />) },
+      { path: 'expenses', element: guard('expenses.view', <ExpensesPage />) },
       {
         path: 'settings/*',
         element: guard(['settings.manage', 'users.manage', 'roles.manage', 'branches.manage', 'audit.view', 'backups.manage', 'loyalty.manage'], <SettingsPage />),

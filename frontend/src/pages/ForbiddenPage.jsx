@@ -1,6 +1,5 @@
-import { Link } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
-import { EmptyState, Button } from '../components/ui';
+import { EmptyState, ButtonLink } from '../components/ui';
 import { useDocumentTitle } from '../hooks';
 
 export default function ForbiddenPage() {
@@ -10,11 +9,7 @@ export default function ForbiddenPage() {
       icon={ShieldAlert}
       title="You don't have access to this page"
       description="Your role does not include permission for this module. Ask your administrator if you need access."
-      action={
-        <Link to="/">
-          <Button variant="secondary">Go to home</Button>
-        </Link>
-      }
+      action={<ButtonLink to="/" variant="secondary">Go to home</ButtonLink>}
       className="min-h-[60vh]"
     />
   );

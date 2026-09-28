@@ -18,7 +18,9 @@ export default function AppLayout() {
 
   // Only modules the signed-in user may access are shown.
   const items = useMemo(
-    () => NAV_ITEMS.filter((item) => !item.permission || hasPermission({ user, permissions }, item.permission)),
+    () => NAV_ITEMS.filter(
+      (item) => (!item.permission || hasPermission({ user, permissions }, item.permission)) && !(item.hideIf && hasPermission({ user, permissions }, item.hideIf)),
+    ),
     [user, permissions],
   );
   const section = location.pathname.split('/')[1] || 'dashboard';

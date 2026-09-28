@@ -5,6 +5,7 @@ const logger = require('../config/logger');
 const messaging = require('../services/messaging');
 const appointmentService = require('../services/appointmentService');
 const notificationService = require('../services/notificationService');
+const inventoryService = require('../services/inventoryService');
 
 /**
  * Background jobs. Each job guards against overlapping runs and logs failures
@@ -32,6 +33,7 @@ const JOBS = [
   { name: 'message-queue', schedule: '*/30 * * * * *', run: () => messaging.processQueue() },
   { name: 'appointment-reminders', schedule: '*/5 * * * *', run: () => appointmentService.sendDueReminders() },
   { name: 'notification-cleanup', schedule: '30 3 * * *', run: () => notificationService.prune() },
+  { name: 'low-stock-check', schedule: '0 7 * * *', run: () => inventoryService.dailyStockCheck() },
 ];
 
 function register(job) {

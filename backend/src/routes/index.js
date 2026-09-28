@@ -15,6 +15,7 @@ const { categoryRouter, serviceRouter } = require('./serviceRoutes');
 const { employeeRouter, attendanceRouter, leaveRouter } = require('./employeeRoutes');
 const appointmentRoutes = require('./appointmentRoutes');
 const loyaltyRoutes = require('./loyaltyRoutes');
+const commerce = require('./commerceRoutes');
 
 /**
  * API route map. Everything below `authenticate` requires a valid access token;
@@ -54,5 +55,14 @@ router.use('/attendance', attendanceRouter);
 router.use('/leave', leaveRouter);
 router.use('/appointments', appointmentRoutes);
 router.use('/loyalty', loyaltyRoutes);
+router.use('/products', commerce.productRouter);
+router.use('/product-categories', commerce.productCategoryRouter);
+router.use('/inventory', commerce.inventoryRouter);
+router.use('/suppliers', commerce.supplierRouter);
+router.use('/purchases', commerce.purchaseRouter);
+router.use('/sales', commerce.saleRouter);
+router.use('/payments', commerce.paymentRouter);
+router.use('/expenses', commerce.expenseRouter);
+router.use('/payroll', commerce.payrollRouter);
 
 module.exports = router;

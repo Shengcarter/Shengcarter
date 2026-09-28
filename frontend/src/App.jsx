@@ -38,7 +38,7 @@ export default function App() {
         <RouterProvider router={router} />
       </Suspense>
       <Toaster
-        position="top-right"
+        position="top-center"
         theme={isDark ? 'dark' : 'light'}
         richColors
         closeButton

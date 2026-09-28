@@ -82,7 +82,7 @@ function redemptionValue(points, availablePoints, billAmount, decimals) {
  * `affectsLifetime` moves lifetime points (used for tiers) as well: true for
  * earned points and for reversing earned points, false for redemptions.
  */
-async function applyChange(conn, { customerId, points, type, saleId = null, description, userId, affectsLifetime = type === 'earn' }) {
+async function applyChange(conn, { customerId, points, type, saleId = null, description, userId, affectsLifetime = type === 'earn', at = null }) {
   if (!points) return null;
   const customer = await db.queryOne('SELECT loyalty_points, lifetime_points FROM customers WHERE id = ? FOR UPDATE', [customerId], conn);
   if (!customer) throw ApiError.notFound('Customer not found');
@@ -95,9 +95,9 @@ async function applyChange(conn, { customerId, points, type, saleId = null, desc
     conn,
   );
   await db.query(
-    `INSERT INTO loyalty_transactions (customer_id, sale_id, type, points, balance_after, description, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [customerId, saleId, type, points, balance, description, userId || null],
+    `INSERT INTO loyalty_transactions (customer_id, sale_id, type, points, balance_after, description, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, UTC_TIMESTAMP()))`,
+    [customerId, saleId, type, points, balance, description, userId || null, at],
     conn,
   );
   return balance;

@@ -8,6 +8,7 @@ import { useEmployees } from './api';
 import { EmployeeFormModal } from './EmployeeFormModal';
 import { AttendancePanel } from './AttendancePanel';
 import { LeavePanel } from './LeavePanel';
+import { PayrollPanel } from './PayrollPanel';
 
 function StaffList() {
   const can = usePermission();
@@ -89,6 +90,7 @@ export default function EmployeesPage() {
     { value: 'staff', label: 'Staff' },
     ...(can(['attendance.view', 'attendance.manage']) ? [{ value: 'attendance', label: 'Attendance' }] : []),
     ...(can(['leave.manage', 'employees.view']) ? [{ value: 'leave', label: 'Leave' }] : []),
+    ...(can('payroll.manage') ? [{ value: 'payroll', label: 'Payroll' }] : []),
   ];
   const tab = tabs.some((t) => t.value === params.get('tab')) ? params.get('tab') : 'staff';
 
@@ -99,6 +101,7 @@ export default function EmployeesPage() {
       {tab === 'staff' ? <StaffList /> : null}
       {tab === 'attendance' ? <AttendancePanel /> : null}
       {tab === 'leave' ? <LeavePanel /> : null}
+      {tab === 'payroll' ? <PayrollPanel /> : null}
     </div>
   );
 }

@@ -178,8 +178,9 @@
     display: block !important;
   }
 
-  /* While a document (receipt, invoice, slip) is being printed, hide the app. */
-  body.has-print-area > #root {
+  /* While a document (receipt, invoice, slip) is being printed, hide the app
+     and any portaled dialogs — only the document itself prints. */
+  body.has-print-area > *:not(.print-area) {
     display: none !important;
   }
 

@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  ReceiptText,
   Bell,
   CalendarDays,
   LayoutDashboard,
@@ -24,7 +25,8 @@ export const NAV_ITEMS = [
   { label: 'Appointments', to: '/appointments', icon: CalendarDays, permission: ['appointments.view', 'appointments.view_own'] },
   { label: 'Services', to: '/services', icon: Scissors, permission: 'services.view' },
   { label: 'Employees', to: '/employees', icon: UserRoundCheck, permission: 'employees.view' },
-  { label: 'POS', to: '/pos', icon: ShoppingBag, permission: ['pos.create', 'sales.view'] },
+  { label: 'POS', to: '/pos', icon: ShoppingBag, permission: 'pos.create' },
+  { label: 'Sales', to: '/pos/sales', icon: ReceiptText, permission: 'sales.view', hideIf: 'pos.create' },
   { label: 'Inventory', to: '/inventory', icon: Package, permission: 'inventory.view' },
   { label: 'Suppliers', to: '/suppliers', icon: Truck, permission: ['suppliers.view', 'purchases.view'] },
   { label: 'Expenses', to: '/expenses', icon: Wallet, permission: 'expenses.view' },

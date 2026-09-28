@@ -20,6 +20,9 @@ export function CustomerPicker({ value, onChange, label = 'Customer', error, cla
   const rootRef = useRef(null);
   const results = useCustomers({ search: debounced, limit: 8, sortBy: 'name', sortOrder: 'asc' }, { enabled: open });
   const rows = results.data?.data || [];
+  // True once the list on screen matches what is typed; a fast Enter waits for it.
+  const settled = debounced === term.trim() && !results.isPending && !results.isPlaceholderData;
+  const [pendingEnter, setPendingEnter] = useState(false);
 
   useEffect(() => {
     const onPointer = (e) => rootRef.current && !rootRef.current.contains(e.target) && setOpen(false);
@@ -32,7 +35,15 @@ export function CustomerPicker({ value, onChange, label = 'Customer', error, cla
     onChange(customer);
     setOpen(false);
     setTerm('');
+    setPendingEnter(false);
   };
+
+  useEffect(() => {
+    if (!pendingEnter || !settled) return;
+    setPendingEnter(false);
+    if (rows[active]) choose(rows[active]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingEnter, settled]);
 
   const onKeyDown = (e) => {
     if (e.key === 'ArrowDown') {
@@ -42,9 +53,13 @@ export function CustomerPicker({ value, onChange, label = 'Customer', error, cla
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActive((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && open && rows[active]) {
+    } else if (e.key === 'Enter' && open) {
       e.preventDefault();
-      choose(rows[active]);
+      if (settled) {
+        if (rows[active]) choose(rows[active]);
+      } else {
+        setPendingEnter(true);
+      }
     } else if (e.key === 'Escape') {
       setOpen(false);
     }
@@ -100,7 +115,7 @@ export function CustomerPicker({ value, onChange, label = 'Customer', error, cla
 
       {open ? (
         <div id="customer-picker-list" role="listbox" className="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-line bg-surface shadow-xl">
-          <div className="scrollbar-thin max-h-72 overflow-y-auto p-1">
+          <div className={cn('scrollbar-thin max-h-72 overflow-y-auto p-1 transition-opacity', !settled && 'opacity-60')}>
             {rows.map((c, i) => (
               <button
                 key={c.id}

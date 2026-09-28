@@ -1,6 +1,5 @@
-import { Link } from 'react-router-dom';
 import { Compass } from 'lucide-react';
-import { EmptyState, Button } from '../components/ui';
+import { EmptyState, ButtonLink } from '../components/ui';
 import { useDocumentTitle } from '../hooks';
 
 export default function NotFoundPage() {
@@ -11,11 +10,7 @@ export default function NotFoundPage() {
         icon={Compass}
         title="Page not found"
         description="The page you are looking for does not exist or has been moved."
-        action={
-          <Link to="/">
-            <Button>Back to dashboard</Button>
-          </Link>
-        }
+        action={<ButtonLink to="/">Back to dashboard</ButtonLink>}
       />
     </div>
   );

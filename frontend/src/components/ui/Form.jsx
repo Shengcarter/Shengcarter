@@ -85,7 +85,7 @@ export function PasswordInput({ label, error, hint, required, className, ref, ..
   );
 }
 
-export function Textarea({ label, error, hint, required, className, rows = 3, ref, ...props }) {
+export function Textarea({ label, error, hint, required, className, rows = 3, compact = false, ref, ...props }) {
   return (
     <Field label={label} error={error} hint={hint} required={required} className={className} id={props.id}>
       {(aria) => (
@@ -94,7 +94,7 @@ export function Textarea({ label, error, hint, required, className, rows = 3, re
           rows={rows}
           {...aria}
           {...props}
-          className={cn(controlBase, controlState(error), 'min-h-20 px-3 py-2.5 text-sm')}
+          className={cn(controlBase, controlState(error), compact ? 'min-h-10 px-3 py-2 text-sm' : 'min-h-20 px-3 py-2.5 text-sm')}
         />
       )}
     </Field>

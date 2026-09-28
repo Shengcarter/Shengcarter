@@ -1,6 +1,6 @@
 import { Suspense, lazy, useMemo } from 'react';
 import { NavLink, Navigate, useParams } from 'react-router-dom';
-import { Building, Building2, CircleDollarSign, Cog, History, Plug, ShieldCheck, BellRing, Users } from 'lucide-react';
+import { Building, Building2, CircleDollarSign, Cog, Gift, History, Plug, ShieldCheck, BellRing, Users } from 'lucide-react';
 import { PageHeader, PageLoader, SkeletonRows, ErrorState } from '../../components/ui';
 import { usePermission, useDocumentTitle } from '../../hooks';
 import { cn } from '../../utils/cn';
@@ -15,11 +15,13 @@ const BranchesSettings = lazy(() => import('./BranchesSettings').then((m) => ({ 
 const ActivityLogSettings = lazy(() => import('./ActivityLogSettings').then((m) => ({ default: m.ActivityLogSettings })));
 const NotificationSettings = lazy(() => import('./NotificationSettings').then((m) => ({ default: m.NotificationSettings })));
 const IntegrationSettings = lazy(() => import('./IntegrationSettings').then((m) => ({ default: m.IntegrationSettings })));
+const LoyaltySettings = lazy(() => import('./LoyaltySettings').then((m) => ({ default: m.LoyaltySettings })));
 
 /** Sections that edit a settings group need the admin settings payload. */
 const SECTIONS = [
   { slug: 'business', label: 'Business', icon: Building, permission: 'settings.manage', group: 'business', component: BusinessSettings },
   { slug: 'financial', label: 'Financial', icon: CircleDollarSign, permission: 'settings.manage', group: 'financial', component: FinancialSettings },
+  { slug: 'loyalty', label: 'Loyalty program', icon: Gift, permission: 'loyalty.manage', component: LoyaltySettings },
   { slug: 'system', label: 'System', icon: Cog, permission: 'settings.manage', group: 'system', component: SystemSettings },
   { slug: 'notifications', label: 'Notifications', icon: BellRing, permission: 'settings.manage', group: 'notifications', component: NotificationSettings },
   { slug: 'integrations', label: 'Integrations', icon: Plug, permission: 'settings.manage', group: 'integrations', component: IntegrationSettings },

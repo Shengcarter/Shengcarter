@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { cn } from '../../utils/cn';
 
 const VARIANTS = {
@@ -20,6 +21,9 @@ const SIZES = {
   lg: 'h-12 px-5 text-base gap-2.5 rounded-xl',
 };
 
+const BASE =
+  'inline-flex shrink-0 select-none items-center justify-center font-medium whitespace-nowrap transition-colors duration-150 disabled:cursor-not-allowed';
+
 export function Button({
   variant = 'primary',
   size = 'md',
@@ -37,18 +41,23 @@ export function Button({
       type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={cn(
-        'inline-flex shrink-0 select-none items-center justify-center font-medium whitespace-nowrap transition-colors duration-150 disabled:cursor-not-allowed',
-        VARIANTS[variant],
-        SIZES[size],
-        className,
-      )}
+      className={cn(BASE, VARIANTS[variant], SIZES[size], className)}
       {...props}
     >
       {loading ? <Loader2 className="size-4 animate-spin" aria-hidden /> : Icon ? <Icon className="size-4" aria-hidden /> : null}
       {children}
       {IconRight && !loading ? <IconRight className="size-4" aria-hidden /> : null}
     </button>
+  );
+}
+
+/** A router link styled as a button (never nest a <button> inside an <a>). */
+export function ButtonLink({ to, variant = 'primary', size = 'md', icon: Icon, className, children, ...props }) {
+  return (
+    <Link to={to} className={cn(BASE, VARIANTS[variant], SIZES[size], className)} {...props}>
+      {Icon ? <Icon className="size-4" aria-hidden /> : null}
+      {children}
+    </Link>
   );
 }
 
