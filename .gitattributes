@@ -1,0 +1,8 @@
+# Normalise line endings; Windows scripts need CRLF, shell scripts need LF.
+* text=auto
+*.bat text eol=crlf
+*.sh text eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
+*.woff2 binary

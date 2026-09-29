@@ -1,0 +1,9 @@
+.git
+.env
+**/node_modules
+frontend/dist
+backend/storage
+backend/logs
+**/*.log
+**/*.sql.gz
+docs

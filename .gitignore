@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Environment files (never commit real credentials)
+.env
+.env.*
+!.env.example
+
+# Build output
+frontend/dist/
+dist/
+coverage/
+
+# Runtime data
+backend/storage/
+backend/logs/*.log
+logs/
+*.log
+npm-debug.log*
+
+# Database backups
+*.sql.gz
+backups/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

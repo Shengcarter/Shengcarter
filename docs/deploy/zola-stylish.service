@@ -1,0 +1,40 @@
+# ZOLA STYLISH MANAGEMENT SYSTEM — systemd service (see docs/DEPLOYMENT.md).
+#
+#   sudo cp docs/deploy/zola-stylish.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now zola-stylish
+#
+# Adjust the paths if the project is not in /opt/zola-stylish/app.
+# Settings are read from /opt/zola-stylish/app/.env.
+
+[Unit]
+Description=ZOLA STYLISH MANAGEMENT SYSTEM
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zola
+Group=zola
+WorkingDirectory=/opt/zola-stylish/app/backend
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+# Graceful shutdown: the server finishes open requests, then exits.
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Sandboxing: the application can write only its storage and log folders.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/zola-stylish/app/backend/storage /opt/zola-stylish/app/backend/logs
+
+[Install]
+WantedBy=multi-user.target
