@@ -44,7 +44,7 @@ function PerformancePanel({ employeeId }) {
       <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Date range">
         {RANGES.map((r) => (
           <button key={r.value} type="button" role="radio" aria-checked={rangeKey === r.value} onClick={() => setRangeKey(r.value)}
-            className={cn('rounded-full border px-3 py-1.5 text-sm', rangeKey === r.value ? 'border-gold-500/50 bg-gold-500/10 text-fg' : 'border-line text-muted hover:text-fg')}>
+            className={cn('rounded-full border px-3 py-1.5 text-sm', rangeKey === r.value ? 'border-brand-500/50 bg-brand-500/10 text-fg' : 'border-line text-muted hover:text-fg')}>
             {r.label}
           </button>
         ))}
@@ -158,8 +158,8 @@ function ServicesPanel({ employee, canEdit }) {
       ) : (
         <div className="grid gap-2 p-5 sm:grid-cols-2 xl:grid-cols-3">
           {services.data.map((s) => (
-            <label key={s.id} className={cn('flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5', selected.has(s.id) ? 'border-gold-500/50 bg-gold-500/5' : 'border-line')}>
-              <input type="checkbox" className="size-4 accent-gold-500" disabled={!canEdit} checked={selected.has(s.id)} onChange={() => toggle(s.id)} />
+            <label key={s.id} className={cn('flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5', selected.has(s.id) ? 'border-brand-500/50 bg-brand-500/5' : 'border-line')}>
+              <input type="checkbox" className="size-4 accent-brand-500" disabled={!canEdit} checked={selected.has(s.id)} onChange={() => toggle(s.id)} />
               <span className="min-w-0 flex-1 text-sm">
                 <span className="block truncate font-medium">{s.name}</span>
                 <span className="block text-xs text-muted">{s.categoryName} · {formatDuration(s.durationMinutes)} · {formatMoney(s.price)}</span>
@@ -229,7 +229,7 @@ export default function EmployeeProfilePage() {
           <Avatar name={e.fullName} src={e.photo} size="xl" />
           {manage ? (
             <>
-              <button type="button" onClick={() => photoInput.current?.click()} className="absolute -right-1 -bottom-1 flex size-8 items-center justify-center rounded-full bg-gold-500 text-ink-950 ring-2 ring-surface" aria-label="Change photo">
+              <button type="button" onClick={() => photoInput.current?.click()} className="absolute -right-1 -bottom-1 flex size-8 items-center justify-center rounded-full bg-brand-500 text-white ring-2 ring-surface" aria-label="Change photo">
                 <Camera className="size-4" />
               </button>
               <input ref={photoInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(ev) => uploadPhoto(ev.target.files?.[0])} />

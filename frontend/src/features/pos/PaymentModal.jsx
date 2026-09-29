@@ -69,9 +69,9 @@ export function PaymentModal({ open, onClose, total, canLeaveBalance, onConfirm,
         </>
       }
     >
-      <div className="mb-5 rounded-2xl bg-ink-950 px-5 py-4 text-center text-white dark:bg-surface-2">
+      <div className="mb-5 rounded-2xl bg-navy-850 px-5 py-4 text-center text-white dark:bg-surface-2">
         <p className="text-xs tracking-widest text-white/60 uppercase dark:text-muted">Amount due</p>
-        <p className="mt-1 text-3xl font-semibold text-gold-400">{formatMoney(total)}</p>
+        <p className="mt-1 text-3xl font-semibold text-brand-400">{formatMoney(total)}</p>
       </div>
 
       <div className="space-y-4">
@@ -86,7 +86,7 @@ export function PaymentModal({ open, onClose, total, canLeaveBalance, onConfirm,
                     role="radio"
                     aria-checked={p.method === m.value}
                     onClick={() => update(index, { method: m.value })}
-                    className={cn('flex flex-col items-center gap-1 rounded-xl border px-1 py-2 text-[11px] font-medium', p.method === m.value ? 'border-gold-500 bg-gold-500/10 text-fg' : 'border-line text-muted hover:text-fg')}
+                    className={cn('flex flex-col items-center gap-1 rounded-xl border px-1 py-2 text-[11px] font-medium', p.method === m.value ? 'border-brand-500 bg-brand-500/10 text-fg' : 'border-line text-muted hover:text-fg')}
                   >
                     <m.icon className="size-4" aria-hidden />
                     {m.label}
@@ -106,7 +106,7 @@ export function PaymentModal({ open, onClose, total, canLeaveBalance, onConfirm,
               ) : (
                 <div className="flex flex-wrap items-end gap-1.5">
                   {quickAmounts(total).map((amount) => (
-                    <button key={amount} type="button" onClick={() => update(index, { amount: String(amount) })} className="rounded-lg border border-line px-2 py-1.5 text-xs hover:border-gold-500/50">
+                    <button key={amount} type="button" onClick={() => update(index, { amount: String(amount) })} className="rounded-lg border border-line px-2 py-1.5 text-xs hover:border-brand-500/50">
                       {formatMoney(amount)}
                     </button>
                   ))}

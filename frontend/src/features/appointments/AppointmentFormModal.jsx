@@ -172,8 +172,8 @@ export function AppointmentFormModal({ open, onClose, appointment, preset, onSav
                     {list.map((s) => {
                       const checked = form.serviceIds.includes(s.id);
                       return (
-                        <label key={s.id} className={cn('flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2', checked ? 'bg-gold-500/10' : 'hover:bg-surface-2')}>
-                          <input type="checkbox" className="size-4 accent-gold-500" checked={checked} onChange={() => toggleService(s.id)} />
+                        <label key={s.id} className={cn('flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2', checked ? 'bg-brand-500/10' : 'hover:bg-surface-2')}>
+                          <input type="checkbox" className="size-4 accent-brand-500" checked={checked} onChange={() => toggleService(s.id)} />
                           <span className="flex-1 text-sm">{s.name}</span>
                           <span className="text-xs text-muted">{formatDuration(s.durationMinutes)}</span>
                           <span className="w-24 text-right text-sm font-medium">{formatMoney(s.price)}</span>
@@ -201,7 +201,7 @@ export function AppointmentFormModal({ open, onClose, appointment, preset, onSav
           <div>
             <label htmlFor="appointment-date" className="mb-1.5 block text-sm font-medium">Date</label>
             <input id="appointment-date" type="date" min={isEdit ? undefined : todayISO()} value={form.date} onChange={(e) => set({ date: e.target.value, time: null })}
-              className="h-10 w-full rounded-xl border border-line bg-surface px-3 text-sm focus:border-gold-500 focus:ring-2 focus:ring-gold-500/25 focus:outline-none" />
+              className="h-10 w-full rounded-xl border border-line bg-surface px-3 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none" />
           </div>
 
           <div>
@@ -218,7 +218,7 @@ export function AppointmentFormModal({ open, onClose, appointment, preset, onSav
                     type="button"
                     onClick={() => set({ employeeId: e.id, time: null })}
                     aria-pressed={form.employeeId === e.id}
-                    className={cn('flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left', form.employeeId === e.id ? 'border-gold-500 bg-gold-500/10' : 'border-line hover:border-gold-500/40')}
+                    className={cn('flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left', form.employeeId === e.id ? 'border-brand-500 bg-brand-500/10' : 'border-line hover:border-brand-500/40')}
                   >
                     <Avatar name={e.fullName} src={e.photo} size="sm" />
                     <span className="min-w-0">
@@ -257,7 +257,7 @@ export function AppointmentFormModal({ open, onClose, appointment, preset, onSav
                       onClick={() => set({ time })}
                       className={cn(
                         'rounded-lg border px-1 py-2 text-sm tabular-nums',
-                        selected ? 'border-gold-500 bg-gold-500 font-semibold text-ink-950' : slot.available ? 'border-line hover:border-gold-500/50' : 'cursor-not-allowed border-transparent bg-surface-2 text-muted/50 line-through',
+                        selected ? 'border-brand-500 bg-brand-500 font-semibold text-white' : slot.available ? 'border-line hover:border-brand-500/50' : 'cursor-not-allowed border-transparent bg-surface-2 text-muted/50 line-through',
                       )}
                     >
                       {formatTime(slot.start)}

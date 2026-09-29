@@ -5,36 +5,38 @@
 
 /* ---------------------------------------------------------------------------
    Brand palette — ZOLA STYLISH MANAGEMENT SYSTEM
-   Gold #D4AF37 · Black #0F0F0F · White #FFFFFF · Soft Pink #F7D7DA
+   Rose pink #E3166A · Navy #141A2E · Blush white #FDF7F8 · White #FFFFFF
+   brand-500 carries white text at 4.6:1 (WCAG AA); brand-600 is the pink
+   used for text on light surfaces.
    --------------------------------------------------------------------------- */
 @theme {
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
 
-  --color-gold-50: #fbf7e8;
-  --color-gold-100: #f6ecc6;
-  --color-gold-200: #eedb95;
-  --color-gold-300: #e5c863;
-  --color-gold-400: #dcbb4a;
-  --color-gold-500: #d4af37;
-  --color-gold-600: #b8952a;
-  --color-gold-700: #957621;
-  --color-gold-800: #72591b;
-  --color-gold-900: #4e3d13;
+  --color-brand-50: #fff0f6;
+  --color-brand-100: #ffe1ee;
+  --color-brand-200: #ffc3dc;
+  --color-brand-300: #ff96c1;
+  --color-brand-400: #f55597;
+  --color-brand-500: #e3166a;
+  --color-brand-600: #c20e57;
+  --color-brand-700: #9e0c47;
+  --color-brand-800: #7a0b39;
+  --color-brand-900: #560a2a;
 
-  --color-blush-50: #fdf5f6;
-  --color-blush-100: #fbecee;
-  --color-blush-200: #f7d7da;
-  --color-blush-300: #efb5bb;
-  --color-blush-400: #e48d97;
-  --color-blush-500: #d66573;
+  --color-blush-50: #fdf5f8;
+  --color-blush-100: #fbe9f0;
+  --color-blush-200: #f7d3e1;
+  --color-blush-300: #efaecb;
+  --color-blush-400: #e483ae;
+  --color-blush-500: #c9467f;
 
-  --color-ink-950: #0f0f0f;
-  --color-ink-900: #151516;
-  --color-ink-850: #1b1b1d;
-  --color-ink-800: #222225;
-  --color-ink-700: #2e2e32;
-  --color-ink-600: #45454a;
+  --color-navy-950: #0b1020;
+  --color-navy-900: #10152a;
+  --color-navy-850: #141a2e;
+  --color-navy-800: #1b2238;
+  --color-navy-700: #252d46;
+  --color-navy-600: #313a56;
 
   --animate-shimmer: shimmer 1.6s linear infinite;
 
@@ -62,38 +64,57 @@
 }
 
 :root {
-  --canvas: #f8f6f2;
+  --canvas: #fdf7f8;
   --surface: #ffffff;
-  --surface-2: #f4f0e9;
-  --surface-3: #ebe5da;
-  --line: #e5ded2;
-  --fg: #0f0f0f;
-  --muted: #625d55;
-  /* Darker gold for text on light surfaces to keep WCAG AA contrast. */
-  --accent: #8a6d1d;
-  --accent-fg: #0f0f0f;
-  --success: #15803d;
-  --warning: #b45309;
+  --surface-2: #fceff4;
+  --surface-3: #f7e1ea;
+  --line: #f0dee6;
+  --fg: #191a2e;
+  --muted: #62667a;
+  /* Deeper pink for text on light surfaces to keep WCAG AA contrast. */
+  --accent: #c20e57;
+  --accent-fg: #ffffff;
+  --success: #137537;
+  --warning: #a34b08;
   --danger: #b91c1c;
   --info: #1d4ed8;
   color-scheme: light;
 }
 
 .dark {
-  --canvas: #0b0b0c;
-  --surface: #141416;
-  --surface-2: #1b1b1e;
-  --surface-3: #242428;
-  --line: #2b2b30;
-  --fg: #f4f1ec;
-  --muted: #a29d94;
-  --accent: #d4af37;
-  --accent-fg: #0f0f0f;
+  --canvas: #0b1020;
+  --surface: #141a2e;
+  --surface-2: #1b2238;
+  --surface-3: #252d46;
+  --line: #2a3350;
+  --fg: #f3f4f8;
+  --muted: #9ea3b8;
+  --accent: #ff6fa8;
+  --accent-fg: #ffffff;
   --success: #4ade80;
   --warning: #fbbf24;
   --danger: #f87171;
   --info: #60a5fa;
   color-scheme: dark;
+}
+
+/* The sidebar is dark navy in both themes; everything inside it (logo, menu,
+   borders) picks these values up through the same semantic tokens. */
+.theme-sidebar {
+  --surface: #141a2e;
+  --surface-2: #1e2540;
+  --surface-3: #283050;
+  --line: #232a42;
+  --fg: #e6e8f0;
+  --muted: #959ab0;
+  --accent: #ff6fa8;
+  color-scheme: dark;
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.dark .theme-sidebar {
+  --surface: #10152a;
 }
 
 @layer base {
@@ -107,12 +128,12 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-gold-500);
+    outline: 2px solid var(--color-brand-500);
     outline-offset: 2px;
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--color-gold-500) 35%, transparent);
+    background: color-mix(in srgb, var(--color-brand-500) 30%, transparent);
   }
 
   input[type='number']::-webkit-inner-spin-button,
@@ -127,8 +148,8 @@
     @apply rounded-2xl border border-line bg-surface;
   }
 
-  .gold-text {
-    background: linear-gradient(135deg, #f1d77a 0%, #d4af37 45%, #a8841f 100%);
+  .brand-text {
+    background: linear-gradient(135deg, #ff6fa8 0%, #e3166a 50%, #b10d52 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;

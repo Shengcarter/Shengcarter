@@ -86,7 +86,7 @@ export function SystemSettings({ values }) {
                 name={`business_hours.${index}.open`}
                 render={({ field }) => (
                   <label className="flex w-36 items-center gap-2 text-sm">
-                    <input type="checkbox" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} className="size-4 accent-gold-500" />
+                    <input type="checkbox" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} className="size-4 accent-brand-500" />
                     {day}
                   </label>
                 )}

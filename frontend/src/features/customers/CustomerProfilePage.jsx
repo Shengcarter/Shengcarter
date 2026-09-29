@@ -166,13 +166,13 @@ export default function CustomerProfilePage() {
       </Link>
 
       <Card className="mb-6 overflow-hidden">
-        <div className="h-16 bg-gradient-to-r from-gold-500/25 via-blush-200/20 to-transparent" />
+        <div className="h-16 bg-gradient-to-r from-brand-500/25 via-blush-200/20 to-transparent" />
         <div className="flex flex-col gap-5 px-5 pb-5 sm:flex-row sm:items-start sm:px-6">
           <div className="relative -mt-10 w-fit shrink-0">
             <Avatar name={c.fullName} src={c.photo} size="xl" className="ring-4 ring-surface" />
             {can('customers.update') ? (
               <>
-                <button type="button" onClick={() => photoInput.current?.click()} className="absolute -right-1 -bottom-1 flex size-8 items-center justify-center rounded-full bg-gold-500 text-ink-950 ring-2 ring-surface" aria-label="Change photo">
+                <button type="button" onClick={() => photoInput.current?.click()} className="absolute -right-1 -bottom-1 flex size-8 items-center justify-center rounded-full bg-brand-500 text-white ring-2 ring-surface" aria-label="Change photo">
                   <Camera className="size-4" />
                 </button>
                 <input ref={photoInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => uploadPhoto(e.target.files?.[0])} />
@@ -182,7 +182,7 @@ export default function CustomerProfilePage() {
           <div className="min-w-0 flex-1 sm:pt-3">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-display text-2xl font-semibold sm:text-3xl">{c.fullName}</h1>
-              {c.tier ? <Badge tone="gold"><span className="size-2 rounded-full" style={{ background: c.tier.color }} aria-hidden />{c.tier.name}</Badge> : null}
+              {c.tier ? <Badge tone="brand"><span className="size-2 rounded-full" style={{ background: c.tier.color }} aria-hidden />{c.tier.name}</Badge> : null}
               {c.isDemo ? <Badge tone="pink">Demo</Badge> : null}
             </div>
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted">
@@ -310,7 +310,7 @@ export default function CustomerProfilePage() {
           <Card className="p-5">
             <h2 className="mb-3 text-sm font-semibold">Next appointment</h2>
             {c.upcomingAppointment ? (
-              <button type="button" onClick={() => navigate(`/appointments?appointment=${c.upcomingAppointment.id}`)} className="w-full rounded-xl border border-line p-3 text-left hover:border-gold-500/40">
+              <button type="button" onClick={() => navigate(`/appointments?appointment=${c.upcomingAppointment.id}`)} className="w-full rounded-xl border border-line p-3 text-left hover:border-brand-500/40">
                 <p className="font-medium">{formatDateTime(c.upcomingAppointment.startTime)}</p>
                 <p className="text-sm text-muted">with {c.upcomingAppointment.employeeName} · {c.upcomingAppointment.code}</p>
                 <div className="mt-2"><StatusBadge status={c.upcomingAppointment.status} /></div>

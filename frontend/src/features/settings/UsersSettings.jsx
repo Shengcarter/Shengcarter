@@ -184,7 +184,7 @@ export function UsersSettings() {
         </div>
       ),
     },
-    { key: 'roleName', header: 'Role', render: (u) => <Badge tone="gold">{u.roleName}</Badge> },
+    { key: 'roleName', header: 'Role', render: (u) => <Badge tone="brand">{u.roleName}</Badge> },
     { key: 'branchName', header: 'Branch', render: (u) => u.branchName || '—' },
     { key: 'lastLoginAt', header: 'Last sign-in', hideOnMobile: true, render: (u) => (u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'Never') },
     {

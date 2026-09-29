@@ -37,7 +37,7 @@ function Panel({ close, navigate, markRead, markAll, count }) {
           type="button"
           onClick={() => markAll.mutate()}
           disabled={!count || markAll.isPending}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-accent hover:bg-gold-500/10 disabled:opacity-40"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-accent hover:bg-brand-500/10 disabled:opacity-40"
         >
           <CheckCheck className="size-3.5" /> Mark all read
         </button>
@@ -59,7 +59,7 @@ function Panel({ close, navigate, markRead, markAll, count }) {
           close();
           navigate('/notifications');
         }}
-        className="mt-1 w-full rounded-lg py-2 text-center text-sm font-medium text-accent hover:bg-gold-500/10"
+        className="mt-1 w-full rounded-lg py-2 text-center text-sm font-medium text-accent hover:bg-brand-500/10"
       >
         View all notifications
       </button>

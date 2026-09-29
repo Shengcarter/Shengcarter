@@ -144,7 +144,7 @@ const DEFAULTS = {
   'financial.allow_partial_payments': true,
   'system.timezone': 'Africa/Dar_es_Salaam',
   'system.language': 'en',
-  'system.default_theme': 'dark',
+  'system.default_theme': 'light',
   'system.time_format': '24h',
   'system.slot_interval_minutes': 15,
   'system.enforce_working_hours': true,

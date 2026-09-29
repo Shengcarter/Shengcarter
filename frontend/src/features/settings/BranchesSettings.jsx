@@ -62,9 +62,9 @@ export function BranchesSettings() {
       primary: true,
       render: (b) => (
         <div className="flex items-center gap-3">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-gold-500/10 text-accent"><Building2 className="size-4" /></span>
+          <span className="flex size-9 items-center justify-center rounded-xl bg-brand-500/10 text-accent"><Building2 className="size-4" /></span>
           <div>
-            <p className="font-medium">{b.name} {b.isDefault ? <Badge tone="gold" className="ml-1">Default</Badge> : null}</p>
+            <p className="font-medium">{b.name} {b.isDefault ? <Badge tone="brand" className="ml-1">Default</Badge> : null}</p>
             <p className="text-xs text-muted">{b.code} · {b.address || 'No address'}</p>
           </div>
         </div>

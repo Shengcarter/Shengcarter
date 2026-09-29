@@ -72,7 +72,7 @@ export default function ServicesPage() {
               key={c.id}
               type="button"
               onClick={() => setFilters((f) => ({ ...f, categoryId: c.id }))}
-              className={cn('shrink-0 rounded-full border px-3 py-1.5 text-sm', String(filters.categoryId) === String(c.id) ? 'border-gold-500/50 bg-gold-500/10 text-fg' : 'border-line text-muted hover:text-fg')}
+              className={cn('shrink-0 rounded-full border px-3 py-1.5 text-sm', String(filters.categoryId) === String(c.id) ? 'border-brand-500/50 bg-brand-500/10 text-fg' : 'border-line text-muted hover:text-fg')}
             >
               {c.name}
             </button>
@@ -112,7 +112,7 @@ export default function ServicesPage() {
                     as={manage ? 'button' : 'div'}
                     type={manage ? 'button' : undefined}
                     onClick={() => open(s)}
-                    className={cn('flex flex-col p-4 text-left', manage && 'transition-colors hover:border-gold-500/40', !s.isActive && 'opacity-60')}
+                    className={cn('flex flex-col p-4 text-left', manage && 'transition-colors hover:border-brand-500/40', !s.isActive && 'opacity-60')}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -123,7 +123,7 @@ export default function ServicesPage() {
                     </div>
                     <div className="mt-4 flex flex-wrap items-center gap-2">
                       <Badge><Clock className="size-3" aria-hidden />{formatDuration(s.durationMinutes)}</Badge>
-                      {s.commissionRate !== null ? <Badge tone="gold">{s.commissionRate}% commission</Badge> : null}
+                      {s.commissionRate !== null ? <Badge tone="brand">{s.commissionRate}% commission</Badge> : null}
                       {!s.isActive ? <Badge tone="danger">Inactive</Badge> : null}
                       <div className="ml-auto flex -space-x-2">
                         {s.employees.slice(0, 4).map((e) => <Avatar key={e.id} name={e.fullName} size="xs" className="ring-2 ring-surface" />)}

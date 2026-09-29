@@ -27,7 +27,7 @@ export default function AppLayout() {
 
   return (
     <div className="min-h-dvh">
-      <a href="#main" className="sr-only z-50 rounded-lg bg-gold-500 px-4 py-2 text-ink-950 focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
+      <a href="#main" className="sr-only z-50 rounded-lg bg-brand-500 px-4 py-2 text-white focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
         Skip to content
       </a>
       <Sidebar items={items} unreadCount={unread.data?.count} />

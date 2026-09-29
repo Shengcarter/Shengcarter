@@ -61,7 +61,7 @@ export default function CheckInPage() {
             </div>
           ) : (
             <>
-              <div className={`px-6 py-6 text-center ${v.valid ? 'bg-gold-500/10' : 'bg-red-500/10'}`}>
+              <div className={`px-6 py-6 text-center ${v.valid ? 'bg-brand-500/10' : 'bg-red-500/10'}`}>
                 {v.valid ? <CalendarCheck className="mx-auto mb-3 size-12 text-accent" aria-hidden /> : <ShieldAlert className="mx-auto mb-3 size-12 text-danger" aria-hidden />}
                 <h1 className="font-display text-2xl font-semibold">{v.valid ? 'Valid appointment' : `Appointment ${v.status.replace('_', ' ')}`}</h1>
                 <p className="mt-1 text-sm text-muted">{v.salonName} · {v.branchName}</p>

@@ -4,7 +4,7 @@ import { cn } from '../../utils/cn';
 
 const controlBase =
   'w-full rounded-xl border bg-surface text-fg placeholder:text-muted/70 transition-colors duration-150 ' +
-  'focus:border-gold-500 focus:ring-2 focus:ring-gold-500/25 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
+  'focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
 
 const controlState = (error) => (error ? 'border-danger/70' : 'border-line hover:border-muted/40');
 
@@ -136,7 +136,7 @@ export function Checkbox({ label, description, className, ref, ...props }) {
         id={props.id || id}
         type="checkbox"
         {...props}
-        className="mt-0.5 size-4 shrink-0 cursor-pointer rounded border-line accent-gold-500"
+        className="mt-0.5 size-4 shrink-0 cursor-pointer rounded border-line accent-brand-500"
       />
       <span className="text-sm">
         <span className="font-medium text-fg">{label}</span>
@@ -166,7 +166,7 @@ export function Switch({ checked, onChange, label, description, disabled, classN
         onClick={() => onChange(!checked)}
         className={cn(
           'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 disabled:opacity-50',
-          checked ? 'bg-gold-500' : 'bg-surface-3',
+          checked ? 'bg-brand-500' : 'bg-surface-3',
         )}
       >
         <span

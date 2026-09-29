@@ -10,19 +10,19 @@ const MIN_LANE_PX = 76;
 const MORE_PX = 34;
 
 function hexToRgba(hex, alpha) {
-  const value = hex?.replace('#', '') || 'D4AF37';
+  const value = hex?.replace('#', '') || 'E3166A';
   const n = Number.parseInt(value, 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
 function EventCard({ event, compact, dragging }) {
-  const color = event.employeeColor || '#D4AF37';
+  const color = event.employeeColor || '#E3166A';
   return (
     <div
       className={cn(
         'h-full overflow-hidden rounded-lg border-l-[3px] px-2 py-1 text-left text-xs shadow-sm',
         STATUS_STYLES[event.status],
-        dragging && 'shadow-xl ring-2 ring-gold-500',
+        dragging && 'shadow-xl ring-2 ring-brand-500',
       )}
       style={{ background: hexToRgba(color, 0.16), borderLeftColor: color }}
     >
@@ -64,7 +64,7 @@ function MoreChip({ chip, top, onClick }) {
       onClick={onClick}
       title={names}
       aria-label={`${chip.count} more appointment${chip.count === 1 ? '' : 's'} from ${formatTime(chip.startTime)}. Open the day view`}
-      className="absolute right-0.5 z-10 flex h-6 items-center justify-center rounded-md bg-surface-2 text-[11px] font-semibold text-accent ring-1 ring-line hover:bg-gold-500/15 focus:z-20 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-500"
+      className="absolute right-0.5 z-10 flex h-6 items-center justify-center rounded-md bg-surface-2 text-[11px] font-semibold text-accent ring-1 ring-line hover:bg-brand-500/15 focus:z-20 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
       style={{ top, width: MORE_PX - 4 }}
     >
       +{chip.count}
@@ -110,7 +110,7 @@ function Column({ column, isFirst, events, hours, canDrag, onEventClick, onSlotC
         columnRef.current = el;
       }}
       onClick={clickSlot}
-      className={cn('relative border-l border-line', isOver && 'bg-gold-500/5', column.closed && 'bg-surface-2/60', onSlotClick && 'cursor-cell')}
+      className={cn('relative border-l border-line', isOver && 'bg-brand-500/5', column.closed && 'bg-surface-2/60', onSlotClick && 'cursor-cell')}
       style={{ height: totalMinutes * PX_PER_MIN }}
     >
       {Array.from({ length: hours.end - hours.start }).map((_, i) => (

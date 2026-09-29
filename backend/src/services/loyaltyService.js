@@ -141,7 +141,7 @@ async function listTiersWithCounts() {
 }
 
 async function saveTier(id, data, ctx) {
-  const params = [data.name, data.minPoints, data.pointsMultiplier, data.color || '#D4AF37', data.benefits || null];
+  const params = [data.name, data.minPoints, data.pointsMultiplier, data.color || '#E3166A', data.benefits || null];
   const tierId = await db.withTransaction(async (conn) => {
     let targetId = id;
     if (id) {

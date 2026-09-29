@@ -164,7 +164,7 @@ export function Header({ onOpenNav }) {
           type="button"
           onClick={() => setSearchOpen(true)}
           className={cn(
-            'flex h-10 flex-1 items-center gap-2.5 rounded-xl border border-line bg-surface px-3 text-sm text-muted transition-colors hover:border-gold-500/40 sm:max-w-md',
+            'flex h-10 flex-1 items-center gap-2.5 rounded-xl border border-line bg-surface px-3 text-sm text-muted transition-colors hover:border-brand-500/40 sm:max-w-md',
           )}
           aria-label="Search (Ctrl+K)"
         >

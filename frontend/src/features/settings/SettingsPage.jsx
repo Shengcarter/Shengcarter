@@ -63,7 +63,7 @@ export default function SettingsPage() {
               className={({ isActive }) =>
                 cn(
                   'flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
-                  isActive ? 'bg-gold-500/10 text-fg ring-1 ring-gold-500/25' : 'text-muted hover:bg-surface-2 hover:text-fg',
+                  isActive ? 'bg-brand-500/10 text-fg ring-1 ring-brand-500/25' : 'text-muted hover:bg-surface-2 hover:text-fg',
                 )
               }
             >

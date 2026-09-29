@@ -147,7 +147,7 @@ function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
           </div>
         </div>
         {cart.appointment ? (
-          <Badge tone="gold"><CalendarCheck className="size-3" />Checking out {cart.appointment.code}</Badge>
+          <Badge tone="brand"><CalendarCheck className="size-3" />Checking out {cart.appointment.code}</Badge>
         ) : null}
         <CustomerPicker label="" value={cart.customer} onChange={(customer) => dispatch({ type: 'customer', customer })} />
         {!cart.customer ? <p className="text-xs text-muted">No customer selected — this will be a walk-in sale (paid in full, no loyalty points).</p> : null}
@@ -202,7 +202,7 @@ function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
         {/* Outside the scrolling content so showing it never changes the list height. */}
         {hiddenBelow ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-surface via-surface/80 to-transparent pt-6 pb-2">
-            <button type="button" onClick={showAll} className="pointer-events-auto flex items-center gap-1 rounded-full bg-gold-500 px-3 py-1 text-xs font-semibold text-black shadow-lg">
+            <button type="button" onClick={showAll} className="pointer-events-auto flex items-center gap-1 rounded-full bg-brand-500 px-3 py-1 text-xs font-semibold text-black shadow-lg">
               <ArrowDown className="size-3.5" aria-hidden />
               {hiddenBelow} more {hiddenBelow === 1 ? 'item' : 'items'}
             </button>
@@ -239,7 +239,7 @@ function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
           </div>
 
           {loyalty?.enabled && loyalty.balance > 0 ? (
-            <div className="flex items-center gap-2 rounded-xl border border-gold-500/25 bg-gold-500/5 px-3 py-2">
+            <div className="flex items-center gap-2 rounded-xl border border-brand-500/25 bg-brand-500/5 px-3 py-2">
               <span className="flex shrink-0 flex-col text-sm leading-tight">
                 <span className="flex items-center gap-1.5 font-medium"><Gift className="size-4 text-accent" />{loyalty.balance} pts</span>
                 <span className="text-xs text-muted">+{loyalty.pointsToEarn} this sale</span>
@@ -418,7 +418,7 @@ export default function PosPage() {
           <button
             type="button"
             onClick={() => setCartOpen(true)}
-            className="fixed inset-x-4 bottom-20 z-30 flex items-center justify-between rounded-2xl bg-gold-500 px-5 py-3.5 font-semibold text-ink-950 shadow-xl shadow-black/30"
+            className="fixed inset-x-4 bottom-20 z-30 flex items-center justify-between rounded-2xl bg-brand-500 px-5 py-3.5 font-semibold text-white shadow-xl shadow-black/30"
           >
             <span className="flex items-center gap-2"><ShoppingBag className="size-5" />Cart · {itemCount} item{itemCount === 1 ? '' : 's'}</span>
             <span>{quote.data && cart.items.length ? formatMoney(quote.data.total) : formatMoney(0)}</span>

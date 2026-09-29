@@ -13,7 +13,7 @@ const SEVERITY = {
   critical: { label: 'Act now', icon: CircleAlert, tone: 'danger', ring: 'text-danger bg-red-500/10 ring-red-500/20' },
   warning: { label: 'Needs attention', icon: AlertTriangle, tone: 'warning', ring: 'text-warning bg-amber-500/10 ring-amber-500/20' },
   positive: { label: 'Going well', icon: TrendingUp, tone: 'success', ring: 'text-success bg-green-500/10 ring-green-500/20' },
-  info: { label: 'Worth knowing', icon: Lightbulb, tone: 'gold', ring: 'text-accent bg-gold-500/10 ring-gold-500/20' },
+  info: { label: 'Worth knowing', icon: Lightbulb, tone: 'brand', ring: 'text-accent bg-brand-500/10 ring-brand-500/20' },
 };
 const PRIORITY_TONE = { high: 'danger', medium: 'warning', low: 'neutral' };
 
@@ -27,7 +27,7 @@ function Finding({ finding }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <p className="font-medium">{finding.title}</p>
-          {finding.kind === 'opportunity' ? <Badge tone="gold">Opportunity</Badge> : null}
+          {finding.kind === 'opportunity' ? <Badge tone="brand">Opportunity</Badge> : null}
         </div>
         <p className="mt-1 text-sm text-muted">{finding.detail}</p>
         {finding.action ? (
@@ -78,10 +78,10 @@ export function InsightsPanel({ params }) {
   return (
     <div className="space-y-6">
       <Card className="overflow-hidden">
-        <div className="bg-gradient-to-br from-gold-500/12 via-transparent to-transparent p-5 sm:p-6">
+        <div className="bg-gradient-to-br from-brand-500/12 via-transparent to-transparent p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-gold-500/15 text-accent ring-1 ring-gold-500/25">
+              <span className="flex size-10 items-center justify-center rounded-xl bg-brand-500/15 text-accent ring-1 ring-brand-500/25">
                 {ai ? <Bot className="size-5" aria-hidden /> : <Sparkles className="size-5" aria-hidden />}
               </span>
               <div>
@@ -137,7 +137,7 @@ export function InsightsPanel({ params }) {
               <ol className="space-y-4 px-5 pb-5">
                 {data.recommendations.map((r, i) => (
                   <li key={i} className="flex gap-3">
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-gold-500/15 text-xs font-semibold text-accent">{i + 1}</span>
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-500/15 text-xs font-semibold text-accent">{i + 1}</span>
                     <div className="min-w-0">
                       <p className="text-sm font-medium">{r.title}</p>
                       <p className="mt-0.5 text-sm text-muted">{r.detail}</p>
@@ -159,7 +159,7 @@ export function InsightsPanel({ params }) {
                 {data.forecast.change !== null ? ` · ${data.forecast.change > 0 ? '+' : ''}${percent(data.forecast.change)} vs last month` : ''}
               </p>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-3" role="img" aria-label="Month progress">
-                <div className="h-full rounded-full bg-gold-500" style={{ width: `${Math.min(100, (data.forecast.toDate / (data.forecast.projected || 1)) * 100)}%` }} />
+                <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, (data.forecast.toDate / (data.forecast.projected || 1)) * 100)}%` }} />
               </div>
               <p className="mt-2 text-xs text-muted">Projection at the current daily rate.</p>
             </Card>

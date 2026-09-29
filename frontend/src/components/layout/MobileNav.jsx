@@ -33,7 +33,7 @@ export function MobileDrawer({ open, onClose, items, unreadCount }) {
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
             transition={{ type: 'spring', stiffness: 380, damping: 38 }}
-            className="relative h-full w-72 max-w-[85vw] border-r border-line bg-surface shadow-2xl"
+            className="theme-sidebar relative h-full w-72 max-w-[85vw] border-r border-line shadow-2xl"
           >
             <button type="button" onClick={onClose} className="absolute top-5 right-3 rounded-lg p-2 text-muted hover:bg-surface-2" aria-label="Close navigation">
               <X className="size-5" />

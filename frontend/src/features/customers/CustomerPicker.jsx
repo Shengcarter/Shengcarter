@@ -69,13 +69,13 @@ export function CustomerPicker({ value, onChange, label = 'Customer', error, cla
     return (
       <div className={className}>
         {label ? <p className="mb-1.5 text-sm font-medium">{label}</p> : null}
-        <div className="flex items-center gap-3 rounded-xl border border-gold-500/40 bg-gold-500/5 px-3 py-2.5">
+        <div className="flex items-center gap-3 rounded-xl border border-brand-500/40 bg-brand-500/5 px-3 py-2.5">
           <Avatar name={value.fullName} src={value.photo} size="sm" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{value.fullName}</p>
             <p className="truncate text-xs text-muted">{value.phone} · {value.code}{value.tier ? ` · ${value.tier.name}` : ''}</p>
           </div>
-          {value.loyaltyPoints ? <Badge tone="gold">{value.loyaltyPoints} pts</Badge> : null}
+          {value.loyaltyPoints ? <Badge tone="brand">{value.loyaltyPoints} pts</Badge> : null}
           <button type="button" onClick={() => onChange(null)} className="rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-fg" aria-label="Change customer">
             <X className="size-4" />
           </button>
@@ -105,7 +105,7 @@ export function CustomerPicker({ value, onChange, label = 'Customer', error, cla
           onKeyDown={onKeyDown}
           placeholder="Search by name, phone or code…"
           className={cn(
-            'h-10 w-full rounded-xl border bg-surface pr-9 pl-9 text-sm focus:border-gold-500 focus:ring-2 focus:ring-gold-500/25 focus:outline-none',
+            'h-10 w-full rounded-xl border bg-surface pr-9 pl-9 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none',
             error ? 'border-danger/70' : 'border-line',
           )}
         />
@@ -137,7 +137,7 @@ export function CustomerPicker({ value, onChange, label = 'Customer', error, cla
             {!results.isPending && !rows.length ? <p className="px-3 py-4 text-center text-sm text-muted">No customers found</p> : null}
           </div>
           {can('customers.create') ? (
-            <button type="button" onClick={() => setCreating(true)} className="flex w-full items-center gap-2 border-t border-line px-4 py-2.5 text-sm font-medium text-accent hover:bg-gold-500/5">
+            <button type="button" onClick={() => setCreating(true)} className="flex w-full items-center gap-2 border-t border-line px-4 py-2.5 text-sm font-medium text-accent hover:bg-brand-500/5">
               <UserPlus className="size-4" /> Add new customer{term ? ` “${term}”` : ''}
             </button>
           ) : null}

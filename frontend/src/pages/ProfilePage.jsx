@@ -53,7 +53,7 @@ export default function ProfilePage() {
                 type="button"
                 onClick={() => fileInput.current?.click()}
                 disabled={uploading}
-                className="absolute -right-1 -bottom-1 flex size-8 items-center justify-center rounded-full bg-gold-500 text-ink-950 shadow ring-2 ring-surface"
+                className="absolute -right-1 -bottom-1 flex size-8 items-center justify-center rounded-full bg-brand-500 text-white shadow ring-2 ring-surface"
                 aria-label="Change profile photo"
               >
                 <Camera className="size-4" />

@@ -185,8 +185,8 @@ Profit & loss is on a cash basis: net sales − cost of goods sold (purchase pri
 - **Data**: TanStack Query for all server data (`features/<module>/api.js` hooks); mutations invalidate the related queries. No business calculations happen only in the browser — totals shown before saving come from the server's quote endpoint or are replaced by the server's result.
 - **Auth**: `api/client.js` attaches the access token, refreshes it once on `401`, and signs out on refresh failure. Tokens live in memory; a page reload restores the session through the refresh cookie.
 - **Guards**: routes and navigation items declare permissions (`routes/`); forbidden pages show a 403 page.
-- **Design system**: `components/ui` — gold-on-black premium theme with light and dark modes (CSS variables), responsive tables that become cards on phones, accessible dialogs and drawers, skeleton loading states, empty and error states.
-- **Charts**: `components/charts` — every chart has a table view for accessibility and exact figures.
+- **Design system**: `components/ui` — rose-pink theme (brand `#E3166A`, navy `#141A2E` sidebar, blush-white `#FDF7F8` background) with light (default) and dark modes. Colours are CSS variables in `src/index.css`: the `brand` scale, semantic tokens (`canvas`, `surface`, `fg`, `muted`, `accent`…) that switch with the theme, and a `.theme-sidebar` scope that keeps the sidebar navy in both modes. Text colours meet WCAG AA (4.5:1). Also responsive tables that become cards on phones, accessible dialogs and drawers, skeleton loading states, empty and error states.
+- **Charts**: `components/charts` — every chart has a table view for accessibility and exact figures. Series colours come from one validated palette (`charts/theme.js`: pink, blue, green, purple, orange, teal, with separate light and dark steps) that keeps neighbouring colours distinguishable for colour-blind readers.
 - **Printing**: `components/print` — A4 invoice and 80 mm thermal receipt layouts with print-specific CSS; PDFs of the same documents come from the server.
 
 ---

@@ -220,7 +220,7 @@ export default function AppointmentsPage() {
               <Button size="sm" variant="secondary" onClick={() => setDate(todayISO())}>Today</Button>
               <IconButton icon={ChevronRight} label="Next" variant="secondary" size="sm" onClick={() => setDate(shiftDate(effectiveView === 'agenda' ? 'day' : view, date, 1))} />
               <h2 className="ml-2 truncate text-base font-semibold whitespace-nowrap">{isPhone ? dt(date).toFormat(view === 'month' ? 'LLL yyyy' : 'ccc dd LLL') : titleForView(view, date)}</h2>
-              {calendar.isFetching && !calendar.isPending ? <span className="ml-2 size-2 animate-pulse rounded-full bg-gold-500" aria-label="Updating" /> : null}
+              {calendar.isFetching && !calendar.isPending ? <span className="ml-2 size-2 animate-pulse rounded-full bg-brand-500" aria-label="Updating" /> : null}
             </div>
           ) : null}
           <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
@@ -232,7 +232,7 @@ export default function AppointmentsPage() {
             ) : null}
             {view !== 'list' ? (
               <label className="flex items-center gap-2 text-sm text-muted">
-                <input type="checkbox" className="size-4 accent-gold-500" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} />
+                <input type="checkbox" className="size-4 accent-brand-500" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} />
                 Show cancelled
               </label>
             ) : null}

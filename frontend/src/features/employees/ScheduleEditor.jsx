@@ -58,7 +58,7 @@ export function ScheduleEditor({ employeeId, schedule, canEdit }) {
         {days.map((d, i) => (
           <li key={d.dayOfWeek} className="flex flex-wrap items-center gap-3 px-5 py-3">
             <label className="flex w-36 items-center gap-2 text-sm font-medium">
-              <input type="checkbox" className="size-4 accent-gold-500" disabled={!canEdit} checked={d.isWorking} onChange={(e) => update(i, { isWorking: e.target.checked })} />
+              <input type="checkbox" className="size-4 accent-brand-500" disabled={!canEdit} checked={d.isWorking} onChange={(e) => update(i, { isWorking: e.target.checked })} />
               {DAYS[d.dayOfWeek]}
             </label>
             {d.isWorking ? (

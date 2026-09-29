@@ -94,7 +94,7 @@ export function MessagesPanel() {
   const columns = [
     { key: 'createdAt', header: 'Queued', render: (m) => <span className="whitespace-nowrap">{formatDateTime(m.createdAt)}</span> },
     { key: 'recipient', header: 'Recipient', primary: true, render: (m) => <div><p className="font-medium">{m.customerName || m.recipient}</p><p className="text-xs text-muted">{m.recipient}</p></div> },
-    { key: 'channel', header: 'Channel', render: (m) => <Badge tone="gold">{titleCase(m.channel)}</Badge> },
+    { key: 'channel', header: 'Channel', render: (m) => <Badge tone="brand">{titleCase(m.channel)}</Badge> },
     { key: 'template', header: 'Type', hideOnMobile: true, render: (m) => titleCase(m.template || 'manual') },
     { key: 'body', header: 'Message', hideOnMobile: true, render: (m) => <span className="line-clamp-2 max-w-sm text-muted">{m.body}</span> },
     { key: 'status', header: 'Status', render: (m) => <div title={m.lastError || ''}><StatusBadge status={m.status} />{m.provider === 'log' && m.status === 'sent' ? <p className="mt-0.5 text-[11px] text-muted">log only</p> : null}</div> },

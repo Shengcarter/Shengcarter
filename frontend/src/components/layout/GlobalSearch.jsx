@@ -113,7 +113,7 @@ export function GlobalSearch({ open, onClose }) {
                       onClick={() => go(item)}
                       className={cn('flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left', index === active ? 'bg-surface-2' : '')}
                     >
-                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gold-500/10 text-accent">
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-500/10 text-accent">
                         <group.icon className="size-4" aria-hidden />
                       </span>
                       <span className="min-w-0 flex-1">

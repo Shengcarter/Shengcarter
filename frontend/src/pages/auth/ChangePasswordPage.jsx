@@ -18,7 +18,7 @@ export default function ChangePasswordPage() {
         <Logo className="mb-10 justify-center" />
         <div className="card p-6 sm:p-8">
           <div className="mb-6 flex items-start gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gold-500/10 text-accent">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-500/10 text-accent">
               <ShieldCheck className="size-5" aria-hidden />
             </div>
             <div>

@@ -58,7 +58,7 @@ function MyDay({ me }) {
   return (
     <Card className="mb-6 flex flex-col gap-4 p-5 lg:flex-row lg:items-center">
       <div className="flex flex-1 items-center gap-4">
-        <span className="flex size-12 items-center justify-center rounded-2xl bg-gold-500/12 text-accent ring-1 ring-gold-500/20"><Clock className="size-5" aria-hidden /></span>
+        <span className="flex size-12 items-center justify-center rounded-2xl bg-brand-500/12 text-accent ring-1 ring-brand-500/20"><Clock className="size-5" aria-hidden /></span>
         <div>
           <p className="font-semibold">My day</p>
           <p className="text-sm text-muted">
@@ -102,6 +102,7 @@ function SalesKpis({ sales, finance }) {
       <StatCard
         label="This month"
         icon={TrendingUp}
+        tone="blue"
         value={formatMoney(month.gross)}
         trend={month.change ?? undefined}
         caption={month.change === null ? `${formatNumber(month.count)} sales` : 'vs same days last month'}
@@ -110,7 +111,7 @@ function SalesKpis({ sales, finance }) {
       {finance ? (
         <StatCard label="Profit this month" icon={Coins} tone={finance.profitAfterWages < 0 ? 'danger' : 'success'} value={formatMoney(finance.profitAfterWages)} trend={finance.profitAfterWagesChange ?? undefined} caption={`After ${formatMoney(finance.wagesEarned)} wages`} index={2} />
       ) : (
-        <StatCard label="Average sale" icon={ReceiptText} value={formatMoney(month.averageSale)} caption="This month" index={2} />
+        <StatCard label="Average sale" icon={ReceiptText} tone="purple" value={formatMoney(month.averageSale)} caption="This month" index={2} />
       )}
       <StatCard
         label="Owed by customers"
@@ -189,7 +190,7 @@ function AppointmentsToday({ appointments, className }) {
                   {!toBusinessZone(a.startTime).hasSame(nowInBusinessZone(), 'day') ? <span className="block text-[11px] leading-tight text-muted">{formatDate(a.startTime, 'ccc dd')}</span> : null}
                   <span className="block text-sm font-semibold">{formatTime(a.startTime)}</span>
                 </span>
-                <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: a.calendarColor || '#D4AF37' }} aria-hidden />
+                <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: a.calendarColor || '#E3166A' }} aria-hidden />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{a.customerName}</span>
                   <span className="block truncate text-xs text-muted">{a.services}{appointments.ownOnly ? '' : ` · ${a.employeeName}`}</span>
@@ -308,7 +309,7 @@ function Birthdays({ customers }) {
             <Link to={`/customers/${b.id}`} className="flex items-center gap-3 px-5 py-2.5 text-sm hover:bg-surface-2/60">
               <Avatar name={b.fullName} size="sm" />
               <span className="min-w-0 flex-1 truncate font-medium">{b.fullName}</span>
-              <Badge tone={b.inDays === 0 ? 'gold' : 'neutral'}>{b.inDays === 0 ? 'Today' : b.inDays === 1 ? 'Tomorrow' : formatDate(`${nowInBusinessZone().year}-${String(b.dateOfBirth).slice(5, 10)}`, 'ccc dd LLL')}</Badge>
+              <Badge tone={b.inDays === 0 ? 'brand' : 'neutral'}>{b.inDays === 0 ? 'Today' : b.inDays === 1 ? 'Tomorrow' : formatDate(`${nowInBusinessZone().year}-${String(b.dateOfBirth).slice(5, 10)}`, 'ccc dd LLL')}</Badge>
             </Link>
           </li>
         ))}
@@ -327,7 +328,7 @@ function StaffToday({ staff }) {
           <li key={s.id} className="flex items-center gap-3 border-b border-line/60 py-2.5 last:border-0">
             <span className="relative">
               <Avatar name={s.fullName} size="sm" />
-              <span className="absolute -right-0.5 -bottom-0.5 size-3 rounded-full ring-2 ring-surface" style={{ background: s.calendarColor || '#D4AF37' }} aria-hidden />
+              <span className="absolute -right-0.5 -bottom-0.5 size-3 rounded-full ring-2 ring-surface" style={{ background: s.calendarColor || '#E3166A' }} aria-hidden />
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium">{s.fullName}</span>
@@ -348,7 +349,7 @@ const SEVERITY = {
   critical: { icon: AlertTriangle, className: 'text-danger bg-red-500/10' },
   warning: { icon: AlertTriangle, className: 'text-warning bg-amber-500/10' },
   positive: { icon: TrendingUp, className: 'text-success bg-green-500/10' },
-  info: { icon: Sparkles, className: 'text-accent bg-gold-500/10' },
+  info: { icon: Sparkles, className: 'text-accent bg-brand-500/10' },
 };
 
 /** The three most important findings from the insights engine. */
@@ -424,7 +425,7 @@ export default function DashboardPage() {
               {d.inventory ? <LowStock inventory={d.inventory} /> : null}
               {d.customers ? (
                 <Card className="flex items-center gap-4 p-5">
-                  <span className="flex size-11 items-center justify-center rounded-xl bg-gold-500/12 text-accent ring-1 ring-gold-500/20"><Users className="size-5" aria-hidden /></span>
+                  <span className="flex size-11 items-center justify-center rounded-xl bg-brand-500/12 text-accent ring-1 ring-brand-500/20"><Users className="size-5" aria-hidden /></span>
                   <div className="flex-1">
                     <p className="text-sm text-muted">Customers</p>
                     <p className="text-xl font-semibold">{formatNumber(d.customers.total)}</p>

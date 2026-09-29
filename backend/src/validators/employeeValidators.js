@@ -31,7 +31,7 @@ const employeeBody = z.object({
   commissionRate: percent.optional().default(0),
   status: z.enum(['active', 'on_leave', 'inactive', 'terminated']).optional().default('active'),
   isBookable: z.boolean().optional().default(true),
-  calendarColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Use a hex colour like #D4AF37').optional(),
+  calendarColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Use a hex colour like #E3166A').optional(),
   notes: optionalText(2000),
   branchId: optionalId,
   serviceIds: z.array(id).max(200).optional(),

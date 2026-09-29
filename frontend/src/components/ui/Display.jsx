@@ -18,7 +18,7 @@ export function CardHeader({ title, description, action, className, icon: Icon }
     <div className={cn('flex items-start justify-between gap-3 px-5 pt-5 pb-3', className)}>
       <div className="flex min-w-0 items-start gap-3">
         {Icon ? (
-          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-gold-500/10 text-accent">
+          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-500/10 text-accent">
             <Icon className="size-4" aria-hidden />
           </div>
         ) : null}
@@ -34,7 +34,7 @@ export function CardHeader({ title, description, action, className, icon: Icon }
 
 const TONES = {
   neutral: 'bg-surface-3 text-muted',
-  gold: 'bg-gold-500/15 text-accent ring-1 ring-gold-500/25',
+  brand: 'bg-brand-500/15 text-accent ring-1 ring-brand-500/25',
   pink: 'bg-blush-200/60 text-blush-500 dark:bg-blush-200/15 dark:text-blush-200',
   success: 'bg-green-500/12 text-success',
   warning: 'bg-amber-500/12 text-warning',
@@ -54,7 +54,7 @@ export function Badge({ tone = 'neutral', children, className, dot = false }) {
 const STATUS_TONES = {
   pending: 'warning',
   confirmed: 'info',
-  in_progress: 'gold',
+  in_progress: 'brand',
   completed: 'success',
   cancelled: 'neutral',
   no_show: 'danger',
@@ -79,7 +79,7 @@ const STATUS_TONES = {
   sent: 'success',
   failed: 'danger',
   skipped: 'neutral',
-  earned: 'gold',
+  earned: 'brand',
   reversed: 'neutral',
   running: 'info',
 };
@@ -100,7 +100,7 @@ export function Avatar({ name = '', src, size = 'md', className }) {
   }
   return (
     <span
-      className={cn('inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-gold-300 to-gold-600 font-semibold text-ink-950', dims, className)}
+      className={cn('inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 font-semibold text-white', dims, className)}
       aria-hidden={!name}
       title={name}
     >
@@ -141,7 +141,7 @@ export function SearchInput({ value: initial = '', onChange, placeholder = 'Sear
         onChange={(e) => setValue(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="h-10 w-full rounded-xl border border-line bg-surface pr-9 pl-9 text-sm text-fg placeholder:text-muted/70 focus:border-gold-500 focus:ring-2 focus:ring-gold-500/25 focus:outline-none [&::-webkit-search-cancel-button]:hidden"
+        className="h-10 w-full rounded-xl border border-line bg-surface pr-9 pl-9 text-sm text-fg placeholder:text-muted/70 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none [&::-webkit-search-cancel-button]:hidden"
       />
       {value ? (
         <button

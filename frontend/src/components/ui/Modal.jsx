@@ -199,7 +199,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, message, confir
       }
     >
       <div className="flex gap-4">
-        <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-full', danger ? 'bg-red-500/10 text-danger' : 'bg-gold-500/10 text-accent')}>
+        <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-full', danger ? 'bg-red-500/10 text-danger' : 'bg-brand-500/10 text-accent')}>
           <AlertTriangle className="size-5" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">

@@ -30,7 +30,7 @@ function Inbox() {
         <Tabs tabs={CATEGORIES} value={params.category} onChange={(category) => setParams((p) => ({ ...p, category, page: 1 }))} />
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-muted">
-            <input type="checkbox" className="size-4 accent-gold-500" checked={params.unreadOnly} onChange={(e) => setParams((p) => ({ ...p, unreadOnly: e.target.checked, page: 1 }))} />
+            <input type="checkbox" className="size-4 accent-brand-500" checked={params.unreadOnly} onChange={(e) => setParams((p) => ({ ...p, unreadOnly: e.target.checked, page: 1 }))} />
             Unread only
           </label>
           <Button size="sm" variant="secondary" icon={CheckCheck} disabled={!unread.data?.count} loading={markAll.isPending} onClick={() => markAll.mutate()}>

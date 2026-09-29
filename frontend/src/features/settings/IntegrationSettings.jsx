@@ -62,7 +62,7 @@ function Block({ icon: Icon, title, description, children }) {
   return (
     <Card className="p-5">
       <div className="mb-4 flex items-start gap-3">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-gold-500/10 text-accent"><Icon className="size-4" /></span>
+        <span className="flex size-9 items-center justify-center rounded-xl bg-brand-500/10 text-accent"><Icon className="size-4" /></span>
         <div>
           <h3 className="font-semibold">{title}</h3>
           <p className="text-sm text-muted">{description}</p>

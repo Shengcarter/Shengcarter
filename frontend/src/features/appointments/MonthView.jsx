@@ -33,7 +33,7 @@ export function MonthView({ date, events, onDayClick, onEventClick }) {
                 onClick={() => onDayClick(day)}
                 className={cn(
                   'mb-1 flex size-7 items-center justify-center rounded-full text-sm',
-                  day === today ? 'bg-gold-500 font-semibold text-ink-950' : inMonth ? 'text-fg hover:bg-surface-2' : 'text-muted',
+                  day === today ? 'bg-brand-500 font-semibold text-white' : inMonth ? 'text-fg hover:bg-surface-2' : 'text-muted',
                 )}
                 aria-label={`Open ${dt(day).toFormat('cccc dd LLLL')}`}
               >

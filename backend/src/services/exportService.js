@@ -272,8 +272,8 @@ function toCsv(doc, info) {
 
 // ---- Excel ------------------------------------------------------------------------------------
 
-const GOLD = 'FFB8952A';
-const GOLD_LIGHT = 'FFF6EFD9';
+const BRAND = 'FFC20E57';
+const BRAND_LIGHT = 'FFFCE4EE';
 
 function moneyFormat(decimals) {
   return decimals ? `#,##0.${'0'.repeat(decimals)}` : '#,##0';
@@ -288,7 +288,7 @@ function sheetName(title, used) {
 }
 
 function header(ws, info) {
-  ws.addRow([SYSTEM_NAME]).font = { bold: true, color: { argb: GOLD }, size: 9 };
+  ws.addRow([SYSTEM_NAME]).font = { bold: true, color: { argb: BRAND }, size: 9 };
   ws.addRow([info.business.name]).font = { bold: true, size: 14 };
   const contact = [info.business.address, info.business.phone, info.business.email, info.business.tin ? `TIN ${info.business.tin}` : null].filter(Boolean).join(' · ');
   if (contact) ws.addRow([contact]).font = { color: { argb: 'FF666666' }, size: 9 };
@@ -311,7 +311,7 @@ async function toXlsx(doc, info) {
   header(summary, info);
   const head = summary.addRow(['Measure', 'Value']);
   head.font = { bold: true };
-  head.eachCell((c) => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GOLD_LIGHT } }; });
+  head.eachCell((c) => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_LIGHT } }; });
   for (const [label, value, format] of doc.summary) {
     const r = summary.addRow([label, isNumeric(format) ? (format === 'percent' ? Number(value) / 100 : Number(value)) : display(value, format, info)]);
     if (numFmt[format]) r.getCell(2).numFmt = numFmt[format];
@@ -326,7 +326,7 @@ async function toXlsx(doc, info) {
     const headerRow = ws.addRow(table.columns.map((c) => (c.format === 'money' ? `${c.label} (${info.currency})` : c.label)));
     headerRow.font = { bold: true };
     headerRow.eachCell((cell, i) => {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GOLD_LIGHT } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_LIGHT } };
       cell.alignment = { horizontal: isNumeric(table.columns[i - 1].format) ? 'right' : 'left' };
     });
     ws.views = [{ state: 'frozen', ySplit: headerRow.number }];
@@ -353,11 +353,11 @@ async function toXlsx(doc, info) {
 
 // ---- PDF --------------------------------------------------------------------------------------
 
-const INK = '#0F0F0F';
+const INK = '#191A2E';
 const MUTED = '#666666';
-const PDF_GOLD = '#B8952A';
-const HEAD_FILL = '#F4ECD6';
-const ZEBRA = '#FAF8F3';
+const PDF_BRAND = '#C20E57';
+const HEAD_FILL = '#FCE4EE';
+const ZEBRA = '#FDF7F8';
 
 /** Trim text with an ellipsis so it fits a table cell (uses the current font). */
 function fit(pdf, text, maxWidth) {
@@ -408,7 +408,7 @@ function pdfHeader(pdf, info, width, left) {
       textLeft = left;
     }
   }
-  pdf.fillColor(PDF_GOLD).font('Helvetica-Bold').fontSize(7.5).text(SYSTEM_NAME, textLeft, top, { characterSpacing: 1.4, lineBreak: false });
+  pdf.fillColor(PDF_BRAND).font('Helvetica-Bold').fontSize(7.5).text(SYSTEM_NAME, textLeft, top, { characterSpacing: 1.4, lineBreak: false });
   pdf.fillColor(INK).font('Helvetica-Bold').fontSize(15).text(info.business.name, textLeft, top + 12, { width: width / 2, lineBreak: false });
   const contact = [info.business.address, info.business.phone, info.business.email].filter(Boolean).join(' · ');
   pdf.font('Helvetica').fontSize(8).fillColor(MUTED).text(contact, textLeft, top + 31, { width: width / 2 });
@@ -440,7 +440,7 @@ async function toPdf(doc, info) {
     const col = i % perRow;
     if (i && col === 0) y += 44;
     const x = left + col * (boxW + 8);
-    pdf.roundedRect(x, y, boxW, 38, 4).fillColor('#FBF8F0').fill();
+    pdf.roundedRect(x, y, boxW, 38, 4).fillColor('#FDF1F5').fill();
     pdf.fillColor(MUTED).font('Helvetica').fontSize(7);
     pdf.text(fit(pdf, label.toUpperCase(), boxW - 16), x + 8, y + 7, { lineBreak: false });
     pdf.fillColor(INK).font('Helvetica-Bold').fontSize(11);
@@ -506,7 +506,7 @@ async function toPdf(doc, info) {
     pdf.switchToPage(range.start + i);
     pdf.page.margins.bottom = 0;
     const fy = pdf.page.height - 30;
-    pdf.fillColor(PDF_GOLD).font('Helvetica-Bold').fontSize(7).text(SYSTEM_NAME, left, fy, { width: width / 2, lineBreak: false, characterSpacing: 1 });
+    pdf.fillColor(PDF_BRAND).font('Helvetica-Bold').fontSize(7).text(SYSTEM_NAME, left, fy, { width: width / 2, lineBreak: false, characterSpacing: 1 });
     pdf.fillColor(MUTED).font('Helvetica').fontSize(7).text(`${info.title} · Page ${i + 1} of ${range.count}`, left + width / 2, fy, { width: width / 2, align: 'right', lineBreak: false });
   }
   return toBuffer(pdf);
