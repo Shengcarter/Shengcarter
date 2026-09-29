@@ -58,28 +58,47 @@ export function localDateOf(iso) {
   return toBusinessZone(iso).toISODate();
 }
 
+// A "+N more" chip is 24px tall; hidden events starting closer together than
+// that share one chip so chips never cover each other.
+const MORE_CHIP_MINUTES = Math.ceil(24 / PX_PER_MIN);
+
 /**
- * Assign overlapping events to side-by-side lanes.
- * Returns events with { lane, lanes } so each can take 1/lanes of the width.
+ * Lay out one calendar column: overlapping events sit side by side in lanes,
+ * each taking 1/lanes of the width.
+ *
+ * `fit` keeps cards readable in narrow columns (a week with every stylist):
+ * a group of overlapping events that needs more than `maxLanes` lanes keeps
+ * only `maxLanesWithMore` of them, marked `reserve` so the grid leaves room
+ * on the right, and the rest are gathered into `more` chips
+ * ({ startTime, count, events }) that open the day view.
  */
-export function layoutLanes(events) {
+export function layoutDay(events, { maxLanes = Infinity, maxLanesWithMore = maxLanes } = {}) {
   const sorted = [...events].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
-  const result = [];
+  const visible = [];
+  const hidden = [];
   let cluster = [];
   let clusterEnd = 0;
   const flush = () => {
-    const lanes = [];
+    const laneEnds = [];
     for (const ev of cluster) {
       const start = new Date(ev.startTime).getTime();
-      let lane = lanes.findIndex((end) => end <= start);
+      let lane = laneEnds.findIndex((end) => end <= start);
       if (lane === -1) {
-        lane = lanes.length;
-        lanes.push(0);
+        lane = laneEnds.length;
+        laneEnds.push(0);
       }
-      lanes[lane] = new Date(ev.endTime).getTime();
+      laneEnds[lane] = new Date(ev.endTime).getTime();
       ev.lane = lane;
     }
-    for (const ev of cluster) result.push({ ...ev, lanes: lanes.length });
+    if (laneEnds.length <= maxLanes) {
+      for (const ev of cluster) visible.push({ ...ev, lanes: laneEnds.length, reserve: false });
+    } else {
+      const keep = Math.max(1, maxLanesWithMore);
+      for (const ev of cluster) {
+        if (ev.lane < keep) visible.push({ ...ev, lanes: keep, reserve: true });
+        else hidden.push(ev);
+      }
+    }
     cluster = [];
   };
   for (const ev of sorted) {
@@ -89,7 +108,24 @@ export function layoutLanes(events) {
     clusterEnd = Math.max(clusterEnd, new Date(ev.endTime).getTime());
   }
   if (cluster.length) flush();
-  return result;
+
+  const more = [];
+  for (const ev of hidden) {
+    const start = new Date(ev.startTime).getTime();
+    const last = more[more.length - 1];
+    if (last && start < last.start + MORE_CHIP_MINUTES * 60_000) {
+      last.count += 1;
+      last.events.push(ev);
+    } else {
+      more.push({ start, startTime: ev.startTime, count: 1, events: [ev] });
+    }
+  }
+  return { events: visible, more };
+}
+
+/** Lanes without any width limit (every event visible). */
+export function layoutLanes(events) {
+  return layoutDay(events).events;
 }
 
 /** Visible hour range from the business hours (with sensible bounds). */

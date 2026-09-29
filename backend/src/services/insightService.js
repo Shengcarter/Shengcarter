@@ -200,11 +200,17 @@ function buildFindings({ period, sales, prevServices, services, customers, staff
     });
   }
 
-  // Money out
+  // Money out. Salary payments follow the payday, so a 30-day window can hold
+  // two paydays or none; costs are compared like for like instead: running
+  // costs (everything except Payroll salary payments) plus wages as earned.
   const e = expenses.summary;
-  if (e.total > 0 && sales.summary.net > 0) {
-    if (e.shareOfSales >= 70) add({ id: 'expense-ratio', category: 'finance', severity: 'critical', title: `Expenses are ${formatNumber(e.shareOfSales, 1)}% of net sales`, detail: `${money(e.total)} spent against ${money(sales.summary.net)} of net sales. Review the largest category (${e.largestCategory}).`, action: { label: 'Expenses', to: '/expenses' } });
-    else if (e.change !== null && e.change >= 25) add({ id: 'expense-growth', category: 'finance', severity: 'warning', title: `Expenses rose ${abs(e.change)}`, detail: `${money(e.total)} compared with ${money(e.previousTotal)} in the previous period; the largest category was ${e.largestCategory}.`, action: { label: 'Expenses', to: '/expenses' } });
+  const costs = e.runningCosts + e.wagesEarned;
+  if (costs > 0 && sales.summary.net > 0) {
+    if (e.costShareOfSales >= 70) {
+      add({ id: 'expense-ratio', category: 'finance', severity: 'critical', title: `Costs are ${formatNumber(e.costShareOfSales, 1)}% of net sales`, detail: `${money(e.runningCosts)} of running costs and ${money(e.wagesEarned)} of wages earned against ${money(sales.summary.net)} of net sales.${e.largestRunningCategory ? ` The largest running cost is ${e.largestRunningCategory}.` : ''}`, action: { label: 'Expenses', to: '/expenses' } });
+    } else if (e.runningCostsChange !== null && e.runningCostsChange >= 25 && e.runningCosts - e.previousRunningCosts >= 0.02 * sales.summary.net) {
+      add({ id: 'expense-growth', category: 'finance', severity: 'warning', title: `Running costs rose ${abs(e.runningCostsChange)}`, detail: `${money(e.runningCosts)} compared with ${money(e.previousRunningCosts)} in the previous period${e.largestRunningCategory ? `; the largest was ${e.largestRunningCategory}` : ''}. Salary payments are left out because paydays fall unevenly between periods.`, action: { label: 'Expenses', to: '/expenses' } });
+    }
   }
   if (sales.summary.outstanding > 0) {
     add({ id: 'outstanding', category: 'finance', severity: 'info', title: `${money(sales.summary.outstanding)} is still owed by customers`, detail: 'Collect outstanding balances at the next visit or send a reminder.', action: { label: 'Sales with balances', to: '/pos/sales' } });
@@ -258,7 +264,12 @@ function factsFor({ period, sales, services, customers, staff, inventory, expens
       slowMovers: inventory.slowMovers.length, slowMoverStockValue: inventory.slowMovers.reduce((sum, p) => sum + p.stockValue, 0),
       productProfit: inventory.summary.productProfit,
     },
-    expenses: { total: expenses.summary.total, changePercent: expenses.summary.change, sharePercentOfNetSales: expenses.summary.shareOfSales, topCategories: expenses.categories.slice(0, 4) },
+    expenses: {
+      runningCosts: expenses.summary.runningCosts, runningCostsChangePercent: expenses.summary.runningCostsChange,
+      wagesEarned: expenses.summary.wagesEarned, costSharePercentOfNetSales: expenses.summary.costShareOfSales,
+      note: 'Running costs exclude salary payments, which follow the payday; wages are counted as earned instead.',
+      topCategories: expenses.categories.slice(0, 4),
+    },
     monthForecast: forecast,
     ruleFindings: findings.map((f) => f.title),
   };

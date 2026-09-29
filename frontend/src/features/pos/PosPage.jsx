@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, CalendarCheck, Gift, History, Loader2, Minus, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
-import { Badge, Button, ButtonLink, Card, Drawer, EmptyState, Input, Segmented, Textarea } from '../../components/ui';
+import { AlertTriangle, ArrowDown, CalendarCheck, Gift, History, Loader2, Minus, NotebookPen, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
+import { Badge, Button, ButtonLink, Card, Drawer, EmptyState, IconButton, Input, Segmented, Textarea } from '../../components/ui';
 import { http } from '../../api/client';
 import { cn } from '../../utils/cn';
 import { formatMoney } from '../../utils/format';
@@ -67,16 +67,80 @@ function toPayload(cart) {
   };
 }
 
+/**
+ * Keeps every cart line findable on short screens: shows the newest line when
+ * one is added (and keeps it in view while the totals below load), and counts
+ * the lines hidden below the visible area.
+ */
+function useCartScroll(itemCount) {
+  const listRef = useRef(null);
+  const previousCount = useRef(itemCount);
+  const pinnedToEnd = useRef(true);
+  const [hiddenBelow, setHiddenBelow] = useState(0);
+
+  const measure = useCallback(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const visibleBottom = list.scrollTop + list.clientHeight;
+    const lines = [...list.querySelectorAll('[data-cart-line]')];
+    // A line counts until it is fully visible (2px tolerance for rounding).
+    setHiddenBelow(lines.filter((el) => el.offsetTop + el.offsetHeight > visibleBottom + 2).length);
+  }, []);
+
+  const scrollToEnd = useCallback(() => {
+    const list = listRef.current;
+    if (!list) return;
+    pinnedToEnd.current = true;
+    list.scrollTop = list.scrollHeight;
+    measure();
+  }, [measure]);
+
+  const onScroll = useCallback(() => {
+    const list = listRef.current;
+    if (!list) return;
+    pinnedToEnd.current = list.scrollHeight - list.scrollTop - list.clientHeight < 4;
+    measure();
+  }, [measure]);
+
+  useEffect(() => {
+    if (itemCount > previousCount.current) scrollToEnd();
+    else measure();
+    previousCount.current = itemCount;
+  }, [itemCount, measure, scrollToEnd]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || typeof ResizeObserver === 'undefined') return undefined;
+    // The list shrinks when the discount, loyalty and totals rows appear.
+    const observer = new ResizeObserver(() => (pinnedToEnd.current ? scrollToEnd() : measure()));
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [measure, scrollToEnd]);
+
+  return { listRef, hiddenBelow, onScroll, showAll: scrollToEnd };
+}
+
 function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
   const q = quote.data;
   const missingStaff = cart.items.some((i) => i.type === 'service' && !i.employeeId);
   const loyalty = q?.loyalty;
+  const { listRef, hiddenBelow, onScroll, showAll } = useCartScroll(cart.items.length);
+  const itemCount = cart.items.reduce((n, i) => n + i.quantity, 0);
+  // The notes box opens on demand so the item list keeps more room.
+  const [notesOpen, setNotesOpen] = useState(false);
+  const showNotes = notesOpen || Boolean(cart.notes);
+  useEffect(() => {
+    if (!cart.items.length) setNotesOpen(false);
+  }, [cart.items.length]);
 
   return (
     <div className="flex h-full flex-col">
       <div className="space-y-3 border-b border-line p-4">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Current sale</h2>
+          <h2 className="flex items-center gap-2 font-semibold">
+            Current sale
+            {itemCount ? <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-muted">{itemCount} {itemCount === 1 ? 'item' : 'items'}</span> : null}
+          </h2>
           <div className="flex items-center gap-1">
             {cart.items.length ? <Button size="xs" variant="ghost" icon={Trash2} onClick={() => dispatch({ type: 'reset' })}>Clear</Button> : null}
             {onClose ? <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted" aria-label="Close cart"><X className="size-4" /></button> : null}
@@ -89,52 +153,61 @@ function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
         {!cart.customer ? <p className="text-xs text-muted">No customer selected — this will be a walk-in sale (paid in full, no loyalty points).</p> : null}
       </div>
 
-      <div className="scrollbar-thin flex-1 overflow-y-auto">
-        {!cart.items.length ? (
-          <EmptyState icon={ShoppingBag} title="Cart is empty" description="Tap a service or product to add it." className="py-10" />
-        ) : (
-          <ul className="divide-y divide-line">
-            {cart.items.map((item, index) => {
-              // Quote lines follow the cart order; ignore a stale quote of a different cart.
-              const line = q?.lines?.length === cart.items.length ? q.lines[index] : null;
-              return (
-                <li key={item.key} className="px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{item.name}</p>
-                      <p className="text-xs text-muted">{formatMoney(item.price)}{item.type === 'product' ? ` × ${item.quantity}` : ''}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">{formatMoney(line?.lineTotal ?? item.price * item.quantity)}</span>
-                      <button type="button" onClick={() => dispatch({ type: 'remove', key: item.key })} className="rounded-md p-1 text-muted hover:bg-red-500/10 hover:text-danger" aria-label={`Remove ${item.name}`}>
-                        <X className="size-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    {item.type === 'service' ? (
-                      <select
-                        aria-label={`Staff for ${item.name}`}
-                        value={item.employeeId || ''}
-                        onChange={(e) => dispatch({ type: 'employee', key: item.key, employeeId: Number(e.target.value) || null })}
-                        className={cn('h-8 flex-1 rounded-lg border bg-surface px-2 text-xs', item.employeeId ? 'border-line' : 'border-amber-500/60 text-warning')}
-                      >
-                        <option value="">Who performed it?</option>
-                        {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
-                      </select>
-                    ) : (
-                      <div className="flex items-center rounded-lg border border-line">
-                        <button type="button" className="p-1.5 text-muted hover:text-fg" onClick={() => dispatch({ type: 'quantity', key: item.key, quantity: item.quantity - 1 })} aria-label="Decrease quantity"><Minus className="size-3.5" /></button>
-                        <span className="w-8 text-center text-sm tabular-nums">{item.quantity}</span>
-                        <button type="button" className="p-1.5 text-muted hover:text-fg" disabled={item.quantity >= item.stock} onClick={() => dispatch({ type: 'quantity', key: item.key, quantity: item.quantity + 1 })} aria-label="Increase quantity"><Plus className="size-3.5" /></button>
+      <div className="relative flex min-h-24 flex-1 flex-col">
+        <div ref={listRef} onScroll={onScroll} className="scrollbar-thin relative min-h-0 flex-1 overflow-y-auto">
+          {!cart.items.length ? (
+            <EmptyState icon={ShoppingBag} title="Cart is empty" description="Tap a service or product to add it." className="py-10" />
+          ) : (
+            <ul className="divide-y divide-line">
+              {cart.items.map((item, index) => {
+                // Quote lines follow the cart order; ignore a stale quote of a different cart.
+                const line = q?.lines?.length === cart.items.length ? q.lines[index] : null;
+                return (
+                  <li key={item.key} data-cart-line className="px-4 py-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="min-w-0 truncate text-sm font-medium">{item.name}</p>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-sm font-semibold">{formatMoney(line?.lineTotal ?? item.price * item.quantity)}</span>
+                        <button type="button" onClick={() => dispatch({ type: 'remove', key: item.key })} className="rounded-md p-1 text-muted hover:bg-red-500/10 hover:text-danger" aria-label={`Remove ${item.name}`}>
+                          <X className="size-3.5" />
+                        </button>
                       </div>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="shrink-0 text-xs text-muted tabular-nums">{formatMoney(item.price)}{item.type === 'product' ? ` × ${item.quantity}` : ''}</span>
+                      {item.type === 'service' ? (
+                        <select
+                          aria-label={`Staff for ${item.name}`}
+                          value={item.employeeId || ''}
+                          onChange={(e) => dispatch({ type: 'employee', key: item.key, employeeId: Number(e.target.value) || null })}
+                          className={cn('h-8 min-w-0 flex-1 rounded-lg border bg-surface px-2 text-xs', item.employeeId ? 'border-line' : 'border-amber-500/60 text-warning')}
+                        >
+                          <option value="">Who performed it?</option>
+                          {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
+                        </select>
+                      ) : (
+                        <div className="ml-auto flex items-center rounded-lg border border-line">
+                          <button type="button" className="p-1.5 text-muted hover:text-fg" onClick={() => dispatch({ type: 'quantity', key: item.key, quantity: item.quantity - 1 })} aria-label="Decrease quantity"><Minus className="size-3.5" /></button>
+                          <span className="w-8 text-center text-sm tabular-nums">{item.quantity}</span>
+                          <button type="button" className="p-1.5 text-muted hover:text-fg" disabled={item.quantity >= item.stock} onClick={() => dispatch({ type: 'quantity', key: item.key, quantity: item.quantity + 1 })} aria-label="Increase quantity"><Plus className="size-3.5" /></button>
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+        {/* Outside the scrolling content so showing it never changes the list height. */}
+        {hiddenBelow ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-surface via-surface/80 to-transparent pt-6 pb-2">
+            <button type="button" onClick={showAll} className="pointer-events-auto flex items-center gap-1 rounded-full bg-gold-500 px-3 py-1 text-xs font-semibold text-black shadow-lg">
+              <ArrowDown className="size-3.5" aria-hidden />
+              {hiddenBelow} more {hiddenBelow === 1 ? 'item' : 'items'}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {cart.items.length ? (
@@ -162,21 +235,22 @@ function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
                 placeholder={cart.discount.type === 'percentage' ? '10' : '5000'}
               />
             ) : null}
+            {!showNotes ? <IconButton icon={NotebookPen} label="Add a note to this sale" size="sm" className="ml-auto" onClick={() => setNotesOpen(true)} /> : null}
           </div>
 
           {loyalty?.enabled && loyalty.balance > 0 ? (
-            <div className="rounded-xl border border-gold-500/25 bg-gold-500/5 p-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-1.5 font-medium"><Gift className="size-4 text-accent" />{loyalty.balance} points</span>
+            <div className="flex items-center gap-2 rounded-xl border border-gold-500/25 bg-gold-500/5 px-3 py-2">
+              <span className="flex shrink-0 flex-col text-sm leading-tight">
+                <span className="flex items-center gap-1.5 font-medium"><Gift className="size-4 text-accent" />{loyalty.balance} pts</span>
                 <span className="text-xs text-muted">+{loyalty.pointsToEarn} this sale</span>
-              </div>
+              </span>
               {loyalty.maxRedeemable >= loyalty.minRedeemPoints ? (
-                <div className="mt-2 flex items-center gap-2">
-                  <Input aria-label="Points to redeem" type="number" min="0" max={loyalty.maxRedeemable} className="flex-1" value={cart.loyaltyPoints} onChange={(e) => dispatch({ type: 'loyalty', points: e.target.value })} placeholder={`Redeem up to ${loyalty.maxRedeemable}`} />
+                <>
+                  <Input aria-label="Points to redeem" type="number" min="0" max={loyalty.maxRedeemable} className="min-w-0 flex-1" value={cart.loyaltyPoints} onChange={(e) => dispatch({ type: 'loyalty', points: e.target.value })} placeholder={`Redeem up to ${loyalty.maxRedeemable}`} />
                   <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'loyalty', points: String(loyalty.maxRedeemable) })}>Max</Button>
-                </div>
+                </>
               ) : (
-                <p className="mt-1 text-xs text-muted">{loyalty.minRedeemPoints} points needed to redeem.</p>
+                <p className="text-xs text-muted">{loyalty.minRedeemPoints} points needed to redeem.</p>
               )}
             </div>
           ) : null}
@@ -194,7 +268,9 @@ function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
             </div>
           </dl>
           {quote.isError ? <p className="flex items-start gap-2 text-sm text-danger" role="alert"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{quote.error.errors?.[0]?.message || quote.error.message}</p> : null}
-          <Textarea aria-label="Sale notes" rows={1} compact placeholder="Notes (optional)" value={cart.notes} onChange={(e) => dispatch({ type: 'notes', notes: e.target.value })} />
+          {showNotes ? (
+            <Textarea aria-label="Sale notes" rows={1} compact autoFocus={notesOpen && !cart.notes} placeholder="Notes (optional)" value={cart.notes} onChange={(e) => dispatch({ type: 'notes', notes: e.target.value })} onBlur={() => setNotesOpen(false)} />
+          ) : null}
           <Button size="lg" className="w-full" disabled={!q || quote.isError || quote.isFetching || missingStaff} onClick={onCharge}>
             {missingStaff ? 'Choose staff for each service' : q ? `Charge ${formatMoney(q.total)}` : 'Calculating…'}
           </Button>

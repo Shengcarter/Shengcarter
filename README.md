@@ -31,7 +31,7 @@ More documentation: [Deployment guide](docs/DEPLOYMENT.md) · [Architecture](doc
 
 | Module | What it does |
 | --- | --- |
-| **Dashboard** | Today's and month-to-date sales with comparisons, net profit, balances owed, 30-day revenue, today's appointments, top services and stylists, payment mix, stock alerts, birthdays, team attendance and top insights. Stylists see "My day" with their services, commission and clock in/out. |
+| **Dashboard** | Today's and month-to-date sales with comparisons, profit after wages, balances owed, 30-day revenue, today's appointments, top services and stylists, payment mix, stock alerts, birthdays, team attendance and top insights. Stylists see "My day" with their services, commission and clock in/out. |
 | **Customers** | Profiles, visit history, purchases, payments, notes, loyalty points and tiers, photo, marketing preferences; duplicate-safe phone numbers. |
 | **Appointments** | Day / week / month / list calendars with drag-and-drop rescheduling, stylist availability, working hours and leave, server-side double-booking prevention, reminders, QR code check-in. |
 | **Services** | Categories, prices, durations, commission rates, which staff perform which service. |

@@ -189,6 +189,10 @@ export default function AppointmentsPage() {
         onEventClick={(e) => setOpenId(e.id)}
         onMove={onMove}
         onSlotClick={onSlotClick}
+        onMoreClick={(column) => {
+          setDate(column.date);
+          setView('day');
+        }}
       />
     );
   }

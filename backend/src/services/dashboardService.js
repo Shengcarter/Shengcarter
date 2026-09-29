@@ -5,7 +5,7 @@ const db = require('../config/database');
 const { hasPermission } = require('../middleware/auth');
 const { camelizeRows } = require('../utils/case');
 const { timezone, todayLocal, localDateRange } = require('../utils/time');
-const { salesTotals, expenseTotal, bucketSql, fillSeries, money, change } = require('./reportService');
+const { salesTotals, expenseTotal, runningCostTotal, wagesEarned, bucketSql, fillSeries, money, change } = require('./reportService');
 
 /**
  * Dashboard for the signed-in user. Each section is included only when the
@@ -88,18 +88,29 @@ async function dashboard(ctx) {
   }
 
   if (can('reports.financial')) {
-    const [exp, lastExp] = await Promise.all([
-      expenseTotal(branchId, monthStart.toISODate(), today.toISODate()),
-      expenseTotal(branchId, lastMonthStart.toISODate(), lastMonthEnd.toISODate()),
+    const [from, to, lastFrom, lastTo] = [monthStart.toISODate(), today.toISODate(), lastMonthStart.toISODate(), lastMonthEnd.toISODate()];
+    const [exp, lastExp, running, lastRunning, wages, lastWages] = await Promise.all([
+      expenseTotal(branchId, from, to),
+      expenseTotal(branchId, lastFrom, lastTo),
+      runningCostTotal(branchId, from, to),
+      runningCostTotal(branchId, lastFrom, lastTo),
+      wagesEarned(branchId, from, to),
+      wagesEarned(branchId, lastFrom, lastTo),
     ]);
     const month = result.sales?.month || (await salesTotals(branchId, monthRange.start, monthRange.end));
     const lastMonth = result.sales?.lastMonth || (await salesTotals(branchId, lastMonthRange.start, lastMonthRange.end));
     const profit = money(month.grossProfit - exp.total);
+    // Profit with wages counted as earned, so it does not jump on payday.
+    const afterWages = money(month.grossProfit - running - wages.total);
     result.finance = {
       expenses: exp.total,
       expensesChange: change(exp.total, lastExp.total),
       netProfit: profit,
       profitChange: change(profit, lastMonth.grossProfit - lastExp.total),
+      profitAfterWages: afterWages,
+      profitAfterWagesChange: change(afterWages, lastMonth.grossProfit - lastRunning - lastWages.total),
+      wagesEarned: wages.total,
+      runningCosts: running,
     };
   }
 
