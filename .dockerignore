@@ -7,3 +7,4 @@ backend/logs
 **/*.log
 **/*.sql.gz
 docs
+.claude
