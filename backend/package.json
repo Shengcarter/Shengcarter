@@ -16,6 +16,7 @@
     "demo:clear": "node scripts/clear-demo-data.js",
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
+    "user:reset-password": "node scripts/reset-password.js",
     "test": "jest --runInBand"
   },
   "dependencies": {

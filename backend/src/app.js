@@ -68,7 +68,9 @@ function createApp() {
         autoLogging: { ignore: (req) => req.url === '/api/health' },
         customLogLevel: (_req, res, err) => (err || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info'),
         serializers: {
-          req: (req) => ({ method: req.method, url: req.url, ip: req.remoteAddress }),
+          // Path only: query strings can hold reset tokens and customer search
+          // terms. raw.ip honours TRUST_PROXY, so logs show the real client.
+          req: (req) => ({ method: req.method, url: req.url.split('?')[0], ip: req.raw?.ip || req.remoteAddress }),
           res: (res) => ({ statusCode: res.statusCode }),
         },
       }),

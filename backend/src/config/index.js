@@ -98,6 +98,8 @@ const envSchema = z.object({
   MAX_UPLOAD_MB: int(5),
   LOG_LEVEL: str('info'),
   LOG_FILE: str('logs/app.log'),
+  LOG_MAX_MB: int(20),
+  LOG_KEEP_FILES: int(5),
   JOBS_ENABLED: bool(true),
 });
 
@@ -191,6 +193,10 @@ const config = Object.freeze({
     maxBytes: env.MAX_UPLOAD_MB * 1024 * 1024,
   },
   logLevel: env.LOG_LEVEL,
+  logRotation: {
+    maxBytes: Math.max(1, env.LOG_MAX_MB) * 1024 * 1024,
+    keep: Math.max(1, env.LOG_KEEP_FILES),
+  },
   jobsEnabled: env.JOBS_ENABLED,
 });
 

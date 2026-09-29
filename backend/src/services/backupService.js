@@ -58,7 +58,8 @@ async function dumpConnection() {
     supportBigNumbers: true,
     bigNumberStrings: true,
     charset: 'utf8mb4',
-    typeCast: (field, next) => (field.type === 'JSON' ? field.string() : next()),
+    // JSON arrives with the binary charset; decode it as UTF-8 so non-ASCII text survives.
+    typeCast: (field, next) => (field.type === 'JSON' ? field.string('utf8') : next()),
   });
   await conn.query("SET time_zone = '+00:00'");
   return conn;
@@ -250,6 +251,12 @@ async function restoreFile(file, { onProgress } = {}) {
     if (statement.trim()) await conn.query(statement);
     // The backup that produced this file was still "running" when it was written.
     await conn.query("UPDATE backups SET status = 'completed', completed_at = COALESCE(completed_at, created_at) WHERE status = 'running'");
+    // Recorded in the restored database, so the activity log shows when it happened.
+    await conn.query(
+      `INSERT INTO activity_logs (user_id, action, entity_type, description, metadata)
+       VALUES (NULL, 'backup.restored', 'backup', ?, ?)`,
+      [`Restored backup ${path.basename(file)} from the server command line`, JSON.stringify({ statements: count })],
+    );
     return { statements: count };
   } finally {
     await conn.query('SET FOREIGN_KEY_CHECKS = 1').catch(() => {});

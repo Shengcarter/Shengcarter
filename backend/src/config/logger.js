@@ -5,6 +5,36 @@ const path = require('path');
 const pino = require('pino');
 const config = require('./index');
 
+const ROTATION_CHECK_MS = 10 * 60 * 1000;
+let fileDestination = null;
+
+/**
+ * Size-based rotation for LOG_FILE, so an always-on salon computer never fills
+ * its disk: app.log → app.log.1 → … → app.log.<LOG_KEEP_FILES>, oldest dropped.
+ * The open file is renamed and then reopened, which works on Windows too.
+ */
+function rotateLogFile(file = config.paths.logFile) {
+  if (!file) return false;
+  let size;
+  try {
+    size = fs.statSync(file).size;
+  } catch {
+    return false;
+  }
+  if (size < config.logRotation.maxBytes) return false;
+  try {
+    for (let i = config.logRotation.keep - 1; i >= 1; i -= 1) {
+      if (fs.existsSync(`${file}.${i}`)) fs.renameSync(`${file}.${i}`, `${file}.${i + 1}`);
+    }
+    fs.renameSync(file, `${file}.1`);
+    fileDestination?.reopen();
+    return true;
+  } catch (error) {
+    process.stderr.write(`Log rotation failed: ${error.message}\n`);
+    return false;
+  }
+}
+
 /**
  * Structured JSON logger. Logs go to stdout (pretty-printed in development)
  * and, when LOG_FILE is set, to a file for later inspection on local installs.
@@ -26,7 +56,10 @@ function buildStreams() {
 
   if (config.paths.logFile && !config.isTest) {
     fs.mkdirSync(path.dirname(config.paths.logFile), { recursive: true });
-    streams.push({ stream: pino.destination({ dest: config.paths.logFile, sync: false, mkdir: true }) });
+    rotateLogFile();
+    fileDestination = pino.destination({ dest: config.paths.logFile, sync: false, mkdir: true });
+    streams.push({ stream: fileDestination });
+    setInterval(() => rotateLogFile(), ROTATION_CHECK_MS).unref();
   }
 
   return streams;
