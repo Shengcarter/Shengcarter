@@ -258,7 +258,7 @@ export default function SuppliersPage() {
           <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center">
             <SearchInput placeholder="Search suppliers…" className="sm:w-72" onChange={(search) => setSupplierParams((p) => ({ ...p, search, page: 1 }))} />
             <label className="flex items-center gap-2 text-sm text-muted">
-              <input type="checkbox" className="size-4 accent-gold-500" checked={Boolean(supplierParams.withBalance)} onChange={(e) => setSupplierParams((p) => ({ ...p, withBalance: e.target.checked ? 'true' : '', page: 1 }))} />
+              <input type="checkbox" className="size-4 accent-brand-500" checked={Boolean(supplierParams.withBalance)} onChange={(e) => setSupplierParams((p) => ({ ...p, withBalance: e.target.checked ? 'true' : '', page: 1 }))} />
               With outstanding balance
             </label>
           </div>

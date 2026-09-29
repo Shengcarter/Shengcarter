@@ -13,8 +13,9 @@ const { sum, toNumber } = require('../utils/money');
  * Every document carries the official system name.
  */
 const SYSTEM_NAME = config.appName;
-const GOLD = '#B8952A';
-const INK = '#0F0F0F';
+// Rose-pink theme: deep pink (AA on white) for accents, navy for text.
+const BRAND = '#C20E57';
+const INK = '#191A2E';
 const MUTED = '#666666';
 
 function logoPath() {
@@ -63,7 +64,7 @@ function invoicePdf(sale) {
   const logo = logoPath();
   if (logo) doc.image(logo, 48, 44, { fit: [56, 56] });
   const left = logo ? 116 : 48;
-  doc.fillColor(GOLD).font('Helvetica-Bold').fontSize(8).text(SYSTEM_NAME, left, 48, { characterSpacing: 1.5 });
+  doc.fillColor(BRAND).font('Helvetica-Bold').fontSize(8).text(SYSTEM_NAME, left, 48, { characterSpacing: 1.5 });
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(18).text(b.name, left, 62);
   doc.font('Helvetica').fontSize(9).fillColor(MUTED);
   const contact = [sale.branchName, b.address, b.phone, b.email, b.website].filter(Boolean).join(' · ');
@@ -95,7 +96,7 @@ function invoicePdf(sale) {
     { label: 'Price', x: 406, w: 70, align: 'right' },
     { label: 'Amount', x: 480, w: width + 48 - 480, align: 'right' },
   ];
-  doc.rect(48, y - 6, width, 22).fill('#F6F1E4');
+  doc.rect(48, y - 6, width, 22).fill('#FCEFF4');
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(8.5);
   cols.forEach((c) => doc.text(c.label.toUpperCase(), c.x + 4, y, { width: c.w - 8, align: c.align || 'left' }));
   y += 24;
@@ -129,9 +130,9 @@ function invoicePdf(sale) {
     doc.fillColor(INK).text(value, 470, y, { width: width + 48 - 470, align: 'right' });
     y += 16;
   }
-  doc.rect(330, y, width + 48 - 330, 26).fill(INK);
+  doc.rect(330, y, width + 48 - 330, 26).fill('#141A2E');
   doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(11).text('TOTAL', 338, y + 8);
-  doc.fillColor('#D4AF37').text(formatMoney(sale.total), 470, y + 8, { width: width + 48 - 478, align: 'right' });
+  doc.fillColor('#FF6FA8').text(formatMoney(sale.total), 470, y + 8, { width: width + 48 - 478, align: 'right' });
   y += 36;
   doc.font('Helvetica').fontSize(9.5);
   for (const [label, value] of [
@@ -152,7 +153,7 @@ function invoicePdf(sale) {
   doc.page.margins.bottom = 0;
   doc.moveTo(48, footerY).lineTo(48 + width, footerY).lineWidth(0.5).strokeColor('#DDDDDD').stroke();
   if (b.footer) doc.fillColor(INK).font('Helvetica').fontSize(9).text(b.footer, 48, footerY + 10, { width, align: 'center', lineBreak: true });
-  doc.fillColor(GOLD).font('Helvetica-Bold').fontSize(7.5).text(SYSTEM_NAME, 48, footerY + 36, { width, align: 'center', characterSpacing: 1.2, lineBreak: false });
+  doc.fillColor(BRAND).font('Helvetica-Bold').fontSize(7.5).text(SYSTEM_NAME, 48, footerY + 36, { width, align: 'center', characterSpacing: 1.2, lineBreak: false });
   return toBuffer(doc);
 }
 

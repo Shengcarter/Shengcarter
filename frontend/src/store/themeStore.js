@@ -9,7 +9,7 @@ function systemPrefersDark() {
 function apply(theme) {
   const dark = theme === 'dark' || (theme === 'system' && systemPrefersDark());
   document.documentElement.classList.toggle('dark', dark);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0F0F0F' : '#F8F6F2');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0B1020' : '#FDF7F8');
   return dark;
 }
 
@@ -22,11 +22,11 @@ function readSaved() {
 }
 
 export const useThemeStore = create((set, get) => ({
-  theme: readSaved() || 'dark',
+  theme: readSaved() || 'light',
   isDark: true,
 
   init(defaultTheme) {
-    const theme = readSaved() || defaultTheme || 'dark';
+    const theme = readSaved() || defaultTheme || 'light';
     set({ theme, isDark: apply(theme) });
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
       if (get().theme === 'system') set({ isDark: apply('system') });

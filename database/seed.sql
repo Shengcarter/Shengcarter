@@ -198,7 +198,7 @@ INSERT IGNORE INTO settings (setting_key, group_name, setting_value) VALUES
   -- System
   ('system.timezone',              'system', JSON_QUOTE('Africa/Dar_es_Salaam')),
   ('system.language',              'system', JSON_QUOTE('en')),
-  ('system.default_theme',         'system', JSON_QUOTE('dark')),
+  ('system.default_theme',         'system', JSON_QUOTE('light')),
   ('system.time_format',           'system', JSON_QUOTE('24h')),
   ('system.slot_interval_minutes', 'system', CAST('15' AS JSON)),
   ('system.enforce_working_hours', 'system', CAST('true' AS JSON)),

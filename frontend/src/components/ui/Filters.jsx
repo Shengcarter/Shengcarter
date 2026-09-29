@@ -1,6 +1,6 @@
 import { cn } from '../../utils/cn';
 
-const control = 'h-10 min-w-0 rounded-xl border border-line bg-surface px-3 text-sm text-fg focus:border-gold-500 focus:ring-2 focus:ring-gold-500/25 focus:outline-none';
+const control = 'h-10 min-w-0 rounded-xl border border-line bg-surface px-3 text-sm text-fg focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none';
 
 /** From / to date inputs that share one row, even on phones. */
 export function DateRange({ from, to, onChange, className }) {

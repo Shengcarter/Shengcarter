@@ -77,7 +77,7 @@ export function NotificationSettings({ values }) {
                           <input
                             type="checkbox"
                             aria-label={`${event.label} via ${channel.label}`}
-                            className="size-4 accent-gold-500"
+                            className="size-4 accent-brand-500"
                             checked={checked}
                             onChange={() => field.onChange(checked ? list.filter((c) => c !== channel.key) : [...list, channel.key])}
                           />

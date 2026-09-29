@@ -83,7 +83,7 @@ export function Catalog({ onAddService, onAddProduct, inCart }) {
             onKeyDown={onKeyDown}
             placeholder={tab === 'services' ? 'Search services…' : 'Search or scan barcode / SKU…'}
             aria-label="Search catalog or scan barcode"
-            className="h-10 w-full rounded-xl border border-line bg-surface pr-3 pl-9 text-sm focus:border-gold-500 focus:ring-2 focus:ring-gold-500/25 focus:outline-none"
+            className="h-10 w-full rounded-xl border border-line bg-surface pr-3 pl-9 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none"
           />
         </div>
       </div>
@@ -95,7 +95,7 @@ export function Catalog({ onAddService, onAddProduct, inCart }) {
               key={c || 'all'}
               type="button"
               onClick={() => setCategory(c)}
-              className={cn('shrink-0 rounded-full border px-3 py-1 text-xs font-medium', category === c ? 'border-gold-500/50 bg-gold-500/10 text-fg' : 'border-line text-muted hover:text-fg')}
+              className={cn('shrink-0 rounded-full border px-3 py-1 text-xs font-medium', category === c ? 'border-brand-500/50 bg-brand-500/10 text-fg' : 'border-line text-muted hover:text-fg')}
             >
               {c || 'All'}
             </button>
@@ -114,7 +114,7 @@ export function Catalog({ onAddService, onAddProduct, inCart }) {
                   key={s.id}
                   type="button"
                   onClick={() => onAddService(s)}
-                  className="group flex min-h-24 flex-col justify-between rounded-2xl border border-line bg-surface p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-gold-500/50 hover:shadow-lg active:translate-y-0"
+                  className="group flex min-h-24 flex-col justify-between rounded-2xl border border-line bg-surface p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-brand-500/50 hover:shadow-lg active:translate-y-0"
                 >
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-sm font-medium text-fg">{s.name}</span>
@@ -142,7 +142,7 @@ export function Catalog({ onAddService, onAddProduct, inCart }) {
                   type="button"
                   disabled={available <= 0}
                   onClick={() => onAddProduct(p)}
-                  className="group flex min-h-24 flex-col justify-between rounded-2xl border border-line bg-surface p-3.5 text-left transition-all enabled:hover:-translate-y-0.5 enabled:hover:border-gold-500/50 enabled:hover:shadow-lg disabled:opacity-45"
+                  className="group flex min-h-24 flex-col justify-between rounded-2xl border border-line bg-surface p-3.5 text-left transition-all enabled:hover:-translate-y-0.5 enabled:hover:border-brand-500/50 enabled:hover:shadow-lg disabled:opacity-45"
                 >
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-sm font-medium text-fg">{p.name}</span>

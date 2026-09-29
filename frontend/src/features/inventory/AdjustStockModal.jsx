@@ -61,7 +61,7 @@ export function AdjustStockModal({ product, onClose }) {
       <div role="radiogroup" aria-label="Movement type" className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
         {TYPES.map((t) => (
           <button key={t.value} type="button" role="radio" aria-checked={type === t.value} onClick={() => setType(t.value)}
-            className={cn('rounded-xl border px-3 py-2 text-left text-sm', type === t.value ? 'border-gold-500 bg-gold-500/10' : 'border-line hover:border-gold-500/40')}>
+            className={cn('rounded-xl border px-3 py-2 text-left text-sm', type === t.value ? 'border-brand-500 bg-brand-500/10' : 'border-line hover:border-brand-500/40')}>
             {t.label}
           </button>
         ))}

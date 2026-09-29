@@ -12,7 +12,7 @@ const tierBody = z.object({
   name: requiredText(50, 'Tier name'),
   minPoints: z.coerce.number().int().min(0).max(100_000_000),
   pointsMultiplier: z.coerce.number().min(0).max(10),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Use a hex colour like #D4AF37').optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Use a hex colour like #E3166A').optional(),
   benefits: optionalText(255),
 });
 

@@ -6,29 +6,29 @@ import { CalendarCheck, Sparkles, ShieldCheck } from 'lucide-react';
 import { http } from '../api/client';
 import { Logo, PageLoader } from '../components/ui';
 
-/** Abstract art: flowing gold "hair strand" curves over a warm dark backdrop. */
+/** Abstract art: flowing rose-pink "hair strand" curves over a deep navy backdrop. */
 function SalonArt() {
   const uid = useId().replace(/:/g, '');
   const id = (name) => `${name}-${uid}`;
   return (
     <svg className="absolute inset-0 size-full" viewBox="0 0 800 1000" preserveAspectRatio="xMidYMid slice" aria-hidden>
       <defs>
-        <radialGradient id={id('glow-gold')} cx="75%" cy="20%" r="60%">
-          <stop offset="0" stopColor="#D4AF37" stopOpacity="0.35" />
-          <stop offset="1" stopColor="#D4AF37" stopOpacity="0" />
+        <radialGradient id={id('glow-brand')} cx="75%" cy="20%" r="60%">
+          <stop offset="0" stopColor="#E3166A" stopOpacity="0.4" />
+          <stop offset="1" stopColor="#E3166A" stopOpacity="0" />
         </radialGradient>
         <radialGradient id={id('glow-pink')} cx="10%" cy="90%" r="55%">
-          <stop offset="0" stopColor="#F7D7DA" stopOpacity="0.18" />
-          <stop offset="1" stopColor="#F7D7DA" stopOpacity="0" />
+          <stop offset="0" stopColor="#FFC3DC" stopOpacity="0.16" />
+          <stop offset="1" stopColor="#FFC3DC" stopOpacity="0" />
         </radialGradient>
         <linearGradient id={id('strand')} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#F1D77A" stopOpacity="0" />
-          <stop offset="0.45" stopColor="#D4AF37" stopOpacity="0.9" />
-          <stop offset="1" stopColor="#9A7B1C" stopOpacity="0" />
+          <stop offset="0" stopColor="#FF8BBA" stopOpacity="0" />
+          <stop offset="0.45" stopColor="#E3166A" stopOpacity="0.9" />
+          <stop offset="1" stopColor="#B10D52" stopOpacity="0" />
         </linearGradient>
       </defs>
-      <rect width="800" height="1000" fill="#0F0F0F" />
-      <rect width="800" height="1000" fill={`url(#${id('glow-gold')})`} />
+      <rect width="800" height="1000" fill="#141A2E" />
+      <rect width="800" height="1000" fill={`url(#${id('glow-brand')})`} />
       <rect width="800" height="1000" fill={`url(#${id('glow-pink')})`} />
       <g fill="none" stroke={`url(#${id('strand')})`} strokeLinecap="round">
         {Array.from({ length: 14 }).map((_, i) => (
@@ -40,7 +40,7 @@ function SalonArt() {
           />
         ))}
       </g>
-      <g stroke="#D4AF37" strokeOpacity="0.08">
+      <g stroke="#E3166A" strokeOpacity="0.1">
         {Array.from({ length: 9 }).map((_, i) => (
           <line key={i} x1={0} y1={110 * i + 40} x2={800} y2={110 * i - 60} />
         ))}
@@ -71,9 +71,9 @@ export default function AuthLayout() {
         <div className="relative flex h-full flex-col justify-between p-12 text-white xl:p-16">
           <Logo className="[&_p]:text-white/90" logo={branding.data?.logo || undefined} />
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-            <p className="mb-4 text-xs font-semibold tracking-[0.3em] text-gold-300/90 uppercase">{salonName || 'Luxury salon operations'}</p>
+            <p className="mb-4 text-xs font-semibold tracking-[0.3em] text-brand-300/90 uppercase">{salonName || 'Luxury salon operations'}</p>
             <h1 className="font-display text-4xl leading-tight font-semibold xl:text-5xl">
-              <span className="gold-text">ZOLA STYLISH</span>
+              <span className="brand-text">ZOLA STYLISH</span>
               <br />
               MANAGEMENT SYSTEM
             </h1>
@@ -83,8 +83,8 @@ export default function AuthLayout() {
             <ul className="mt-10 space-y-4">
               {HIGHLIGHTS.map(({ icon: Icon, text }) => (
                 <li key={text} className="flex items-center gap-3 text-sm text-white/80">
-                  <span className="flex size-9 items-center justify-center rounded-xl bg-white/5 ring-1 ring-gold-500/30">
-                    <Icon className="size-4 text-gold-400" aria-hidden />
+                  <span className="flex size-9 items-center justify-center rounded-xl bg-white/5 ring-1 ring-brand-500/30">
+                    <Icon className="size-4 text-brand-400" aria-hidden />
                   </span>
                   {text}
                 </li>

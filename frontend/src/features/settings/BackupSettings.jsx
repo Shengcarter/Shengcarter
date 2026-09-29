@@ -129,7 +129,7 @@ export function BackupSettings() {
   return (
     <div className="space-y-6">
       <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-        <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-gold-500/12 text-accent ring-1 ring-gold-500/20"><HardDriveDownload className="size-5" aria-hidden /></span>
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-brand-500/12 text-accent ring-1 ring-brand-500/20"><HardDriveDownload className="size-5" aria-hidden /></span>
         <div className="flex-1">
           <p className="font-semibold">Database backup</p>
           <p className="text-sm text-muted">{last ? `Last successful backup ${formatDateTime(last.completedAt || last.createdAt)} (${size(last.sizeBytes)}).` : 'No backup has been made yet.'}</p>
@@ -146,7 +146,7 @@ export function BackupSettings() {
           empty={<EmptyState icon={DatabaseBackup} title="No backups yet" description="Create the first one with “Back up now”." />}
           columns={[
             { key: 'filename', header: 'File', primary: true, render: (b) => <span className="font-mono text-xs break-all">{b.filename}</span> },
-            { key: 'type', header: 'Type', render: (b) => <Badge tone={b.type === 'scheduled' ? 'info' : 'gold'}>{b.type === 'scheduled' ? 'Automatic' : 'Manual'}</Badge> },
+            { key: 'type', header: 'Type', render: (b) => <Badge tone={b.type === 'scheduled' ? 'info' : 'brand'}>{b.type === 'scheduled' ? 'Automatic' : 'Manual'}</Badge> },
             { key: 'status', header: 'Status', render: (b) => <span title={b.error || undefined}><StatusBadge status={b.status} /></span> },
             { key: 'size', header: 'Size', align: 'right', render: (b) => <span className="whitespace-nowrap">{size(b.sizeBytes)}</span> },
             {

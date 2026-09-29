@@ -21,12 +21,12 @@ export function DateStrip({ date, onChange }) {
             aria-pressed={active}
             className={cn(
               'flex min-w-12 flex-1 flex-col items-center rounded-xl border px-2 py-1.5',
-              active ? 'border-gold-500 bg-gold-500 text-ink-950' : 'border-line bg-surface text-fg',
+              active ? 'border-brand-500 bg-brand-500 text-white' : 'border-line bg-surface text-fg',
             )}
           >
-            <span className={cn('text-[10px] uppercase', active ? 'text-ink-950/70' : 'text-muted')}>{d.toFormat('ccc')}</span>
+            <span className={cn('text-[10px] uppercase', active ? 'text-white/80' : 'text-muted')}>{d.toFormat('ccc')}</span>
             <span className="text-base font-semibold">{d.day}</span>
-            {iso === today && !active ? <span className="size-1 rounded-full bg-gold-500" aria-label="Today" /> : null}
+            {iso === today && !active ? <span className="size-1 rounded-full bg-brand-500" aria-label="Today" /> : null}
           </button>
         );
       })}
@@ -43,7 +43,7 @@ export function AgendaView({ date, events, onEventClick, onCreate, canCreate }) 
         icon={CalendarX2}
         title="No appointments this day"
         description="Enjoy the calm — or book someone in."
-        action={canCreate ? <button type="button" onClick={onCreate} className="rounded-xl bg-gold-500 px-4 py-2 text-sm font-medium text-ink-950">New appointment</button> : null}
+        action={canCreate ? <button type="button" onClick={onCreate} className="rounded-xl bg-brand-500 px-4 py-2 text-sm font-medium text-white">New appointment</button> : null}
       />
     );
   }

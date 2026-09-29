@@ -143,7 +143,7 @@ export function visibleHours(businessHours) {
 export const STATUS_STYLES = {
   pending: 'border-l-amber-400',
   confirmed: 'border-l-sky-400',
-  in_progress: 'border-l-gold-500',
+  in_progress: 'border-l-brand-500',
   completed: 'border-l-green-500',
   cancelled: 'border-l-zinc-400 opacity-50 line-through',
   no_show: 'border-l-red-500 opacity-60',

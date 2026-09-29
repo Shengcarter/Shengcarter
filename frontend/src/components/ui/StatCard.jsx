@@ -4,15 +4,19 @@ import { cn } from '../../utils/cn';
 import { Skeleton } from './Feedback';
 
 /** KPI tile: label, headline value, optional trend and caption. */
-export function StatCard({ label, value, icon: Icon, caption, trend, tone = 'gold', loading, onClick, className, index = 0 }) {
+export function StatCard({ label, value, icon: Icon, caption, trend, tone = 'brand', loading, onClick, className, index = 0 }) {
   const Tag = onClick ? motion.button : motion.div;
-  const toneClass = {
-    gold: 'bg-gold-500/12 text-accent ring-gold-500/20',
-    pink: 'bg-blush-200/40 text-blush-500 ring-blush-300/30 dark:bg-blush-200/10 dark:text-blush-200',
-    success: 'bg-green-500/10 text-success ring-green-500/20',
-    warning: 'bg-amber-500/10 text-warning ring-amber-500/20',
-    danger: 'bg-red-500/10 text-danger ring-red-500/20',
-    neutral: 'bg-surface-3 text-muted ring-line',
+  // Icon badge colour, and the thin card border in the same hue.
+  const [toneClass, borderClass] = {
+    brand: ['bg-brand-500/12 text-accent ring-brand-500/20', 'border-brand-500/30'],
+    pink: ['bg-blush-200/40 text-blush-500 ring-blush-300/30 dark:bg-blush-200/10 dark:text-blush-200', 'border-blush-400/40'],
+    blue: ['bg-sky-500/10 text-info ring-sky-500/20', 'border-sky-500/35'],
+    purple: ['bg-violet-500/10 text-violet-700 ring-violet-500/20 dark:text-violet-300', 'border-violet-500/35'],
+    teal: ['bg-teal-500/10 text-teal-700 ring-teal-500/20 dark:text-teal-300', 'border-teal-500/35'],
+    success: ['bg-green-500/10 text-success ring-green-500/20', 'border-green-500/35'],
+    warning: ['bg-amber-500/10 text-warning ring-amber-500/20', 'border-amber-500/40'],
+    danger: ['bg-red-500/10 text-danger ring-red-500/20', 'border-red-500/35'],
+    neutral: ['bg-surface-3 text-muted ring-line', ''],
   }[tone];
 
   return (
@@ -24,7 +28,8 @@ export function StatCard({ label, value, icon: Icon, caption, trend, tone = 'gol
       transition={{ delay: index * 0.04, duration: 0.3 }}
       className={cn(
         'card @container flex w-full min-w-0 flex-col gap-3 p-4 text-left sm:p-5',
-        onClick && 'transition-colors hover:border-gold-500/40',
+        borderClass,
+        onClick && 'transition-colors hover:border-brand-500/60',
         className,
       )}
     >

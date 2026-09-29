@@ -103,10 +103,10 @@ export function ServiceFormModal({ open, onClose, service }) {
                   {(employees.data || []).map((e) => {
                     const checked = field.value?.includes(e.id);
                     return (
-                      <label key={e.id} className={cn('flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2', checked ? 'border-gold-500/50 bg-gold-500/5' : 'border-line')}>
+                      <label key={e.id} className={cn('flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2', checked ? 'border-brand-500/50 bg-brand-500/5' : 'border-line')}>
                         <input
                           type="checkbox"
-                          className="size-4 accent-gold-500"
+                          className="size-4 accent-brand-500"
                           checked={checked}
                           onChange={() => field.onChange(checked ? field.value.filter((x) => x !== e.id) : [...field.value, e.id])}
                         />

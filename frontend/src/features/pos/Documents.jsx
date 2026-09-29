@@ -74,7 +74,7 @@ export function ThermalReceipt({ sale }) {
 export function A4Invoice({ sale }) {
   const b = useBusiness();
   const taxLabel = b.financial.tax_label || 'Tax';
-  const th = { textAlign: 'left', padding: '8px 6px', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, background: '#F6F1E4' };
+  const th = { textAlign: 'left', padding: '8px 6px', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, background: '#FCEFF4' };
   const td = { padding: '8px 6px', borderBottom: '1px solid #eee', fontSize: 12 };
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111', padding: '4mm', maxWidth: '190mm' }}>
@@ -82,7 +82,7 @@ export function A4Invoice({ sale }) {
         <div style={{ display: 'flex', gap: 12 }}>
           {b.logo ? <img src={b.logo} alt="" style={{ width: 60, height: 60, objectFit: 'contain' }} /> : null}
           <div>
-            <div style={{ fontSize: 9, letterSpacing: 2, fontWeight: 700, color: '#9A7B1C' }}>{SYSTEM_NAME}</div>
+            <div style={{ fontSize: 9, letterSpacing: 2, fontWeight: 700, color: '#C20E57' }}>{SYSTEM_NAME}</div>
             <div style={{ fontSize: 22, fontWeight: 700 }}>{b.salon_name}</div>
             <div style={{ fontSize: 11, color: '#555' }}>{[sale.branchName, b.address, b.phone, b.email].filter(Boolean).join(' · ')}</div>
             {b.tax_number ? <div style={{ fontSize: 11, color: '#555' }}>TIN: {b.tax_number}{b.vat_number ? ` · VRN: ${b.vat_number}` : ''}</div> : null}
@@ -131,8 +131,8 @@ export function A4Invoice({ sale }) {
           {sale.discountAmount > 0 ? <div style={row}><span>Discount</span><span>-{formatMoney(sale.discountAmount)}</span></div> : null}
           {sale.loyaltyDiscount > 0 ? <div style={row}><span>Loyalty</span><span>-{formatMoney(sale.loyaltyDiscount)}</span></div> : null}
           {sale.taxMode !== 'none' && sale.taxRate > 0 ? <div style={row}><span>{taxLabel} {sale.taxRate}%</span><span>{formatMoney(sale.taxAmount)}</span></div> : null}
-          <div style={{ ...row, background: '#0F0F0F', color: '#fff', padding: '8px 10px', margin: '6px 0', fontWeight: 700, fontSize: 14 }}>
-            <span>TOTAL</span><span style={{ color: '#D4AF37' }}>{formatMoney(sale.total)}</span>
+          <div style={{ ...row, background: '#141A2E', color: '#fff', padding: '8px 10px', margin: '6px 0', fontWeight: 700, fontSize: 14 }}>
+            <span>TOTAL</span><span style={{ color: '#FF6FA8' }}>{formatMoney(sale.total)}</span>
           </div>
           <div style={row}><span>Amount paid</span><span>{formatMoney(sale.amountPaid)}</span></div>
           {sale.changeDue > 0 ? (
@@ -146,7 +146,7 @@ export function A4Invoice({ sale }) {
       </div>
       <div style={{ marginTop: 40, borderTop: '1px solid #ddd', paddingTop: 10, textAlign: 'center', fontSize: 11 }}>
         {b.financial.receipt_footer}
-        <div style={{ fontSize: 9, letterSpacing: 1.5, color: '#9A7B1C', fontWeight: 700, marginTop: 6 }}>{SYSTEM_NAME}</div>
+        <div style={{ fontSize: 9, letterSpacing: 1.5, color: '#C20E57', fontWeight: 700, marginTop: 6 }}>{SYSTEM_NAME}</div>
       </div>
     </div>
   );

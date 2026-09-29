@@ -104,7 +104,7 @@ export function RolesSettings() {
               <button
                 type="button"
                 onClick={() => setSelectedId(role.id)}
-                className={cn('flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm', selected?.id === role.id ? 'bg-gold-500/10 ring-1 ring-gold-500/25' : 'hover:bg-surface-2')}
+                className={cn('flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm', selected?.id === role.id ? 'bg-brand-500/10 ring-1 ring-brand-500/25' : 'hover:bg-surface-2')}
               >
                 <span>
                   <span className="block font-medium">{role.name}</span>
@@ -134,7 +134,7 @@ export function RolesSettings() {
             </div>
           </div>
           {isSuperAdmin ? (
-            <p className="border-b border-line bg-gold-500/5 px-5 py-3 text-sm text-accent">Super Admin always has every permission. It cannot be restricted.</p>
+            <p className="border-b border-line bg-brand-500/5 px-5 py-3 text-sm text-accent">Super Admin always has every permission. It cannot be restricted.</p>
           ) : null}
           <div className="divide-y divide-line">
             {catalog.data.map((group) => {
@@ -152,8 +152,8 @@ export function RolesSettings() {
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {group.permissions.map((perm) => (
-                      <label key={perm.code} className={cn('flex cursor-pointer items-start gap-3 rounded-xl border border-line px-3 py-2.5', draft.has(perm.code) && 'border-gold-500/40 bg-gold-500/5')}>
-                        <input type="checkbox" className="mt-0.5 size-4 accent-gold-500" checked={draft.has(perm.code)} disabled={isSuperAdmin} onChange={() => toggle(perm.code)} />
+                      <label key={perm.code} className={cn('flex cursor-pointer items-start gap-3 rounded-xl border border-line px-3 py-2.5', draft.has(perm.code) && 'border-brand-500/40 bg-brand-500/5')}>
+                        <input type="checkbox" className="mt-0.5 size-4 accent-brand-500" checked={draft.has(perm.code)} disabled={isSuperAdmin} onChange={() => toggle(perm.code)} />
                         <span className="text-sm">
                           <span className="block font-medium">{perm.description}</span>
                           <code className="text-[11px] text-muted">{perm.code}</code>

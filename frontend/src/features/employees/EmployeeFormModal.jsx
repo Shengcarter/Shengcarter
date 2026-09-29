@@ -8,7 +8,7 @@ import { Button, Input, Modal, Select, Switch, Textarea, applyServerErrors } fro
 import { getFormatSettings } from '../../utils/format';
 import { employeeApi, employeeKeys } from './api';
 
-const COLORS = ['#D4AF37', '#60A5FA', '#F472B6', '#34D399', '#A78BFA', '#FB923C', '#F87171', '#22D3EE', '#94A3B8'];
+const COLORS = ['#E3166A', '#60A5FA', '#F472B6', '#34D399', '#A78BFA', '#FB923C', '#F87171', '#22D3EE', '#94A3B8'];
 
 const schema = z.object({
   fullName: z.string().trim().min(1, 'Full name is required').max(120),

@@ -83,7 +83,7 @@ export default function CustomersPage() {
                 key={f.value}
                 type="button"
                 onClick={() => set({ visited: f.value })}
-                className={`rounded-full border px-3 py-1.5 text-sm ${params.visited === f.value ? 'border-gold-500/50 bg-gold-500/10 text-fg' : 'border-line text-muted hover:text-fg'}`}
+                className={`rounded-full border px-3 py-1.5 text-sm ${params.visited === f.value ? 'border-brand-500/50 bg-brand-500/10 text-fg' : 'border-line text-muted hover:text-fg'}`}
               >
                 {f.label}
               </button>

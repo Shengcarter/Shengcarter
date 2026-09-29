@@ -13,7 +13,7 @@ function NavItem({ item, onNavigate, badge }) {
       className={({ isActive }) =>
         cn(
           'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
-          isActive ? 'text-fg' : 'text-muted hover:bg-surface-2 hover:text-fg',
+          isActive ? 'text-white' : 'text-muted hover:bg-surface-2 hover:text-fg',
         )
       }
     >
@@ -22,14 +22,14 @@ function NavItem({ item, onNavigate, badge }) {
           {isActive ? (
             <motion.span
               layoutId="sidebar-active"
-              className="absolute inset-0 rounded-xl bg-gradient-to-r from-gold-500/15 to-gold-500/5 ring-1 ring-gold-500/25"
+              className="absolute inset-0 rounded-xl bg-brand-500 shadow-md shadow-brand-900/40"
               transition={{ type: 'spring', stiffness: 500, damping: 40 }}
             />
           ) : null}
-          <item.icon className={cn('relative size-[18px] shrink-0', isActive ? 'text-accent' : 'text-muted group-hover:text-fg')} aria-hidden />
+          <item.icon className={cn('relative size-[18px] shrink-0', isActive ? 'text-white' : 'text-muted group-hover:text-fg')} aria-hidden />
           <span className="relative flex-1">{item.label}</span>
           {badge ? (
-            <span className="relative rounded-full bg-gold-500 px-1.5 text-[10px] leading-4 font-bold text-ink-950">{badge > 99 ? '99+' : badge}</span>
+            <span className={cn('relative rounded-full px-1.5 text-[10px] leading-4 font-bold', isActive ? 'bg-white text-brand-600' : 'bg-brand-500 text-white')}>{badge > 99 ? '99+' : badge}</span>
           ) : null}
         </>
       )}
@@ -67,7 +67,7 @@ export function SidebarContent({ items, onNavigate, unreadCount }) {
 
 export function Sidebar({ items, unreadCount }) {
   return (
-    <aside className="no-print fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-line bg-surface lg:block">
+    <aside className="theme-sidebar no-print fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-line lg:block">
       <SidebarContent items={items} unreadCount={unreadCount} />
     </aside>
   );

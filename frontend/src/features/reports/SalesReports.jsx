@@ -212,7 +212,7 @@ export function CustomersReport({ params }) {
               />
             </div>
             <div className="mt-6 grid gap-6 xl:grid-cols-2">
-              <ReportTable title="Top customers" description="By spend in this period" columns={[...customerColumns, { key: 'tier', header: 'Tier', hideOnMobile: true, render: (c) => (c.tier ? <Badge tone="gold">{c.tier}</Badge> : '—') }]} rows={r.topCustomers} onRowClick={(c) => navigate(`/customers/${c.id}`)} />
+              <ReportTable title="Top customers" description="By spend in this period" columns={[...customerColumns, { key: 'tier', header: 'Tier', hideOnMobile: true, render: (c) => (c.tier ? <Badge tone="brand">{c.tier}</Badge> : '—') }]} rows={r.topCustomers} onRowClick={(c) => navigate(`/customers/${c.id}`)} />
               <ReportTable
                 title="Regulars at risk"
                 description={`${count(s.atRisk)} customers with 3+ visits have not returned in 60 days`}

@@ -12,7 +12,7 @@ function TierModal({ tier, onClose }) {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (tier) setForm({ name: tier.name || '', minPoints: tier.minPoints ?? '', pointsMultiplier: tier.pointsMultiplier ?? 1, color: tier.color || '#D4AF37', benefits: tier.benefits || '' });
+    if (tier) setForm({ name: tier.name || '', minPoints: tier.minPoints ?? '', pointsMultiplier: tier.pointsMultiplier ?? 1, color: tier.color || '#E3166A', benefits: tier.benefits || '' });
   }, [tier]);
   if (!tier || !form) return null;
   const submit = async () => {
@@ -108,7 +108,7 @@ export function LoyaltySettings() {
             <Input label="Minimum points to redeem" type="number" min="0" value={rules.minRedeemPoints} onChange={set('minRedeemPoints')} />
             <Input label="Points can pay at most (%)" type="number" min="0" max="100" value={rules.maxRedeemPercent} onChange={set('maxRedeemPercent')} />
           </div>
-          <p className="rounded-xl bg-gold-500/5 px-4 py-3 text-sm">
+          <p className="rounded-xl bg-brand-500/5 px-4 py-3 text-sm">
             Example: spending <strong>{formatMoney(exampleSpend)}</strong> earns <strong>{formatNumber(examplePoints)}</strong> points, worth <strong>{formatMoney(examplePoints * (Number(rules.redeemValuePerPoint) || 0))}</strong> on a future visit (Bronze tier).
           </p>
         </div>

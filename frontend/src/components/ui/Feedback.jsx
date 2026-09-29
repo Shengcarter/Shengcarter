@@ -6,7 +6,7 @@ import { Button } from './Button';
 export function Spinner({ className, label = 'Loading' }) {
   return (
     <span role="status" className={cn('inline-flex items-center gap-2 text-muted', className)}>
-      <Loader2 className="size-5 animate-spin text-gold-500" aria-hidden />
+      <Loader2 className="size-5 animate-spin text-brand-500" aria-hidden />
       <span className="sr-only">{label}</span>
     </span>
   );
@@ -41,7 +41,7 @@ export function EmptyState({ icon: Icon = Inbox, title, description, action, cla
       animate={{ opacity: 1, y: 0 }}
       className={cn('flex flex-col items-center justify-center px-6 py-14 text-center', className)}
     >
-      <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-gold-500/10 text-accent ring-1 ring-gold-500/20">
+      <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-brand-500/10 text-accent ring-1 ring-brand-500/20">
         <Icon className="size-6" aria-hidden />
       </div>
       <h3 className="font-display text-lg font-semibold text-fg">{title}</h3>

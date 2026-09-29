@@ -4,11 +4,11 @@ import { cn } from '../../utils/cn';
 
 const VARIANTS = {
   primary:
-    'bg-gold-500 text-ink-950 hover:bg-gold-400 active:bg-gold-600 shadow-sm shadow-gold-900/20 disabled:bg-gold-500/50',
+    'bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700 shadow-sm shadow-brand-900/20 disabled:bg-brand-500/50',
   secondary:
     'bg-surface-2 text-fg border border-line hover:bg-surface-3 disabled:opacity-50',
   outline:
-    'border border-gold-500/60 text-accent hover:bg-gold-500/10 disabled:opacity-50',
+    'border border-brand-500/60 text-accent hover:bg-brand-500/10 disabled:opacity-50',
   ghost: 'text-fg hover:bg-surface-2 disabled:opacity-50',
   danger: 'bg-red-600 text-white hover:bg-red-500 disabled:opacity-50',
   'danger-ghost': 'text-danger hover:bg-red-500/10 disabled:opacity-50',
@@ -78,7 +78,7 @@ export function IconButton({ icon: Icon, label, variant = 'ghost', size = 'md', 
     >
       <Icon className="size-[18px]" aria-hidden />
       {badge ? (
-        <span className="absolute -top-0.5 -right-0.5 flex min-w-4.5 items-center justify-center rounded-full bg-gold-500 px-1 text-[10px] leading-4.5 font-bold text-ink-950">
+        <span className="absolute -top-0.5 -right-0.5 flex min-w-4.5 items-center justify-center rounded-full bg-brand-500 px-1 text-[10px] leading-4.5 font-bold text-white">
           {badge > 99 ? '99+' : badge}
         </span>
       ) : null}
