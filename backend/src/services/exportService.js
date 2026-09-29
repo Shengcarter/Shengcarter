@@ -154,9 +154,14 @@ const DOCUMENTS = {
       ['Gross profit', r.summary.grossProfit, 'money'],
       ['Gross margin', r.summary.grossMargin, 'percent'],
       ['Less: expenses', r.summary.expenses, 'money'],
-      ['Net profit', r.summary.netProfit, 'money'],
+      ['Net profit (cash paid out)', r.summary.netProfit, 'money'],
       ['Net margin', r.summary.netMargin, 'percent'],
       ['Commission earned, not yet paid', r.summary.unpaidCommission, 'money'],
+      ['Running costs (excluding salary payments)', r.summary.afterWages.runningCosts, 'money'],
+      ['Salaries for the days in the period', r.summary.afterWages.salaries, 'money'],
+      ['Commission earned in the period', r.summary.afterWages.commission, 'money'],
+      ['Profit after wages', r.summary.afterWages.profit, 'money'],
+      ['Margin after wages', r.summary.afterWages.margin, 'percent'],
     ],
     tables: [
       { title: 'Profit by period', columns: [col('period', 'Period', 'period'), col('net', 'Net sales', 'money'), col('cogs', 'COGS', 'money'), col('expenses', 'Expenses', 'money'), col('profit', 'Net profit', 'money')], rows: r.series },
@@ -164,6 +169,7 @@ const DOCUMENTS = {
     ],
     notes: [
       'Net profit is on a cash basis: salaries and commissions count as expenses when they are paid.',
+      'Profit after wages counts salaries for the days worked and commission when earned, paid or not, so it does not jump on payday. Once every salary for the period is paid, it equals net profit.',
       'Stock purchases become cost of goods sold when the products are sold.',
     ],
   }),

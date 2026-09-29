@@ -176,7 +176,7 @@ To add a permission: insert it in `database/seed.sql` (and a migration for exist
 
 `reportService` returns JSON for each report (sales, customers, services, staff, inventory, expenses, profit & loss, branches) with the period, comparison with the previous period and a table. `exportService` renders the same data to CSV (UTF-8 BOM, formula-injection protection), Excel (ExcelJS with number formats) and PDF (PDFKit with business header and page numbers). Exports require `reports.export` and are audited.
 
-Profit & loss is on a cash basis: net sales − cost of goods sold (purchase price at the time of sale) − expenses (including salaries paid).
+Profit & loss is on a cash basis: net sales − cost of goods sold (purchase price at the time of sale) − expenses (including salaries paid). Because salaries are paid once a month, cash profit jumps on payday, so the P&L and the dashboard also show **profit after wages**: gross profit − running costs (every expense except salary payments made through Payroll) − wages earned in the period (`wagesEarned`: salaries for the days worked, from the salary record covering each day or else the monthly salary spread over that month's days, plus commission earned). Once every salary for a period has been paid, the two figures are equal. The expense insights compare running costs and wages the same way, so they are not distorted by paydays.
 
 ---
 

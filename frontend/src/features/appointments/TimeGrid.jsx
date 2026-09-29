@@ -3,7 +3,11 @@ import { DndContext, DragOverlay, PointerSensor, KeyboardSensor, useDraggable, u
 import { CheckCircle2, GripVertical } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatTime, nowInBusinessZone } from '../../utils/format';
-import { PX_PER_MIN, STATUS_STYLES, layoutLanes, minutesOfDay } from './calendarUtils';
+import { PX_PER_MIN, STATUS_STYLES, layoutDay, minutesOfDay } from './calendarUtils';
+
+// Narrowest readable appointment card, and the room kept for "+N" chips.
+const MIN_LANE_PX = 76;
+const MORE_PX = 34;
 
 function hexToRgba(hex, alpha) {
   const value = hex?.replace('#', '') || 'D4AF37';
@@ -44,7 +48,7 @@ function DraggableEvent({ event, top, height, left, width, canDrag, onClick }) {
       aria-roledescription={canDrag ? 'Draggable appointment' : 'Appointment'}
       aria-label={`${formatTime(event.startTime)} ${event.customerName}, ${event.services}, ${event.status.replace('_', ' ')}`}
       className={cn('group absolute z-10 p-0.5 focus:z-20 focus:outline-none', canDrag && 'cursor-grab active:cursor-grabbing', isDragging && 'opacity-30')}
-      style={{ top, height, left: `${left}%`, width: `${width}%` }}
+      style={{ top, height, left, width }}
     >
       <EventCard event={event} compact={height < 44} />
       {canDrag ? <GripVertical className="absolute top-1 right-1 size-3 text-muted opacity-0 group-hover:opacity-100" aria-hidden /> : null}
@@ -52,9 +56,37 @@ function DraggableEvent({ event, top, height, left, width, canDrag, onClick }) {
   );
 }
 
-function Column({ column, isFirst, events, hours, canDrag, onEventClick, onSlotClick, slotMinutes }) {
+function MoreChip({ chip, top, onClick }) {
+  const names = chip.events.map((e) => `${formatTime(e.startTime)} ${e.customerName}`).join('\n');
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={names}
+      aria-label={`${chip.count} more appointment${chip.count === 1 ? '' : 's'} from ${formatTime(chip.startTime)}. Open the day view`}
+      className="absolute right-0.5 z-10 flex h-6 items-center justify-center rounded-md bg-surface-2 text-[11px] font-semibold text-accent ring-1 ring-line hover:bg-gold-500/15 focus:z-20 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-500"
+      style={{ top, width: MORE_PX - 4 }}
+    >
+      +{chip.count}
+    </button>
+  );
+}
+
+function Column({ column, isFirst, events, hours, canDrag, onEventClick, onSlotClick, onMoreClick, slotMinutes }) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id, data: { column } });
-  const laid = useMemo(() => layoutLanes(events), [events]);
+  const columnRef = useRef(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = columnRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  // Until the width is known every event is shown, as before.
+  const maxLanes = width ? Math.max(1, Math.floor(width / MIN_LANE_PX)) : Infinity;
+  const maxLanesWithMore = width ? Math.max(1, Math.floor((width - MORE_PX) / MIN_LANE_PX)) : Infinity;
+  const { events: laid, more } = useMemo(() => layoutDay(events, { maxLanes, maxLanesWithMore }), [events, maxLanes, maxLanesWithMore]);
   const totalMinutes = (hours.end - hours.start) * 60;
   const [now, setNow] = useState(() => nowInBusinessZone());
   useEffect(() => {
@@ -73,7 +105,10 @@ function Column({ column, isFirst, events, hours, canDrag, onEventClick, onSlotC
 
   return (
     <div
-      ref={setNodeRef}
+      ref={(el) => {
+        setNodeRef(el);
+        columnRef.current = el;
+      }}
       onClick={clickSlot}
       className={cn('relative border-l border-line', isOver && 'bg-gold-500/5', column.closed && 'bg-surface-2/60', onSlotClick && 'cursor-cell')}
       style={{ height: totalMinutes * PX_PER_MIN }}
@@ -84,19 +119,28 @@ function Column({ column, isFirst, events, hours, canDrag, onEventClick, onSlotC
       {laid.map((event) => {
         const start = minutesOfDay(event.startTime) - hours.start * 60;
         const duration = (new Date(event.endTime) - new Date(event.startTime)) / 60_000;
+        const lanesWidth = event.reserve ? `(100% - ${MORE_PX}px)` : '100%';
         return (
           <DraggableEvent
             key={event.id}
             event={event}
             top={Math.max(0, start * PX_PER_MIN)}
             height={Math.max(22, duration * PX_PER_MIN)}
-            left={(event.lane / event.lanes) * 100}
-            width={100 / event.lanes}
+            left={`calc(${lanesWidth} * ${event.lane} / ${event.lanes})`}
+            width={`calc(${lanesWidth} / ${event.lanes})`}
             canDrag={canDrag(event)}
             onClick={onEventClick}
           />
         );
       })}
+      {more.map((chip) => (
+        <MoreChip
+          key={chip.start}
+          chip={chip}
+          top={Math.max(0, (minutesOfDay(chip.startTime) - hours.start * 60) * PX_PER_MIN)}
+          onClick={() => onMoreClick?.(column)}
+        />
+      ))}
       {showNow && nowTop >= 0 && nowTop <= totalMinutes * PX_PER_MIN ? (
         <div className="pointer-events-none absolute inset-x-0 z-20 flex items-center" style={{ top: nowTop }} aria-hidden>
           {isFirst ? <span className="-ml-1 size-2 rounded-full bg-red-500" /> : null}
@@ -112,8 +156,9 @@ function Column({ column, isFirst, events, hours, canDrag, onEventClick, onSlotC
  * columns: [{ id, title, subtitle?, date, employeeId?, closed? }]
  * eventColumn(event) → column id the event belongs to.
  * onMove({ event, column, minutesDelta }) is called after a drop.
+ * onMoreClick(column) opens the appointments hidden behind a "+N" chip.
  */
-export function TimeGrid({ columns, events, hours, slotMinutes, eventColumn, canDrag, onEventClick, onMove, onSlotClick }) {
+export function TimeGrid({ columns, events, hours, slotMinutes, eventColumn, canDrag, onEventClick, onMove, onSlotClick, onMoreClick }) {
   const scrollRef = useRef(null);
   const [active, setActive] = useState(null);
   const sensors = useSensors(
@@ -179,6 +224,7 @@ export function TimeGrid({ columns, events, hours, slotMinutes, eventColumn, can
               canDrag={canDrag}
               onEventClick={onEventClick}
               onSlotClick={onSlotClick}
+              onMoreClick={onMoreClick}
               slotMinutes={slotMinutes}
             />
           ))}
