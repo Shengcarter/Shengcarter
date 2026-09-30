@@ -17,10 +17,11 @@ const config = require('../src/config');
 const { password: passwordRule } = require('../src/validators/common');
 const { connect, runSqlFile } = require('./lib/db');
 
+// Named after the demo staff they belong to, so the dashboard greets a person ("Good morning, Neema").
 const DEMO_USERS = [
-  { role: 'receptionist', name: 'Demo Receptionist', email: 'receptionist.demo@zolastylish.local', employeeCode: 'EMP-0007' },
-  { role: 'stylist', name: 'Demo Stylist (Neema)', email: 'stylist.demo@zolastylish.local', employeeCode: 'EMP-0001' },
-  { role: 'accountant', name: 'Demo Accountant', email: 'accountant.demo@zolastylish.local', employeeCode: null },
+  { role: 'receptionist', name: 'Zawadi Mollel', email: 'receptionist.demo@zolastylish.local', employeeCode: 'EMP-0007' },
+  { role: 'stylist', name: 'Neema Mwakyusa', email: 'stylist.demo@zolastylish.local', employeeCode: 'EMP-0001' },
+  { role: 'accountant', name: 'Baraka Mushi', email: 'accountant.demo@zolastylish.local', employeeCode: null },
 ];
 
 function checkPassword(value, variable) {

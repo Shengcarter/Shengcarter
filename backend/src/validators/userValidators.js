@@ -29,6 +29,12 @@ const updateUser = z.object({
   employeeId: nullableId,
 });
 
+/** What anyone may change on their own account (email and role stay with administrators). */
+const updateMe = z.object({
+  fullName: requiredText(120, 'Full name'),
+  phone: optionalPhone,
+});
+
 const resetUserPassword = z.object({ password });
 
 const roleBody = z.object({
@@ -51,6 +57,7 @@ module.exports = {
   listUsers,
   createUser,
   updateUser,
+  updateMe,
   resetUserPassword,
   roleBody,
   roleUpdate: roleBody.partial(),

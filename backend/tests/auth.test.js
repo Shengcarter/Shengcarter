@@ -1,7 +1,7 @@
 'use strict';
 
 const bcrypt = require('bcryptjs');
-const { getApp, signIn, request, db, ADMIN } = require('./helpers');
+const { getApp, signIn, request, db, ADMIN, DEMO, uniquePhone } = require('./helpers');
 
 describe('authentication', () => {
   test('login returns an access token and sets an httpOnly refresh cookie', async () => {
@@ -100,5 +100,38 @@ describe('authentication', () => {
     expect(replay.status).toBe(401);
     const stolen = await request(server).post('/api/auth/refresh').set('Cookie', secondCookie);
     expect(stolen.status).toBe(401);
+  });
+});
+
+describe('own details (My profile)', () => {
+  test('anyone signed in can change their own name and phone, and the session shows it', async () => {
+    const accountant = await signIn(DEMO.accountant);
+    const before = accountant.loginResponse.body.data.user;
+    const phone = uniquePhone();
+    try {
+      const res = await accountant.patch('/users/me', { fullName: '  Grace Kimaro ', phone, email: 'someone.else@test.local', roleId: 1 });
+      expect(res.status).toBe(200);
+      expect(res.body.data.fullName).toBe('Grace Kimaro');
+
+      // The greeting reads the session, so /auth/me must carry the new name.
+      const me = await accountant.get('/auth/me');
+      expect(me.body.data.user.fullName).toBe('Grace Kimaro');
+      expect(me.body.data.user.phone).toBe(phone);
+      // Email and role are not self-service: extra fields are ignored.
+      expect(me.body.data.user.email).toBe(DEMO.accountant.email);
+      expect(me.body.data.user.role.slug).toBe('accountant');
+
+      const log = await db.queryOne("SELECT description FROM activity_logs WHERE entity_type = 'user' AND entity_id = ? ORDER BY id DESC LIMIT 1", [before.id]);
+      expect(log.description).toBe(`Changed own name from ${before.fullName} to Grace Kimaro`);
+    } finally {
+      await db.query('UPDATE users SET full_name = ?, phone = ? WHERE id = ?', [before.fullName, before.phone, before.id]);
+    }
+  });
+
+  test('a name is required', async () => {
+    const stylist = await signIn(DEMO.stylist);
+    const res = await stylist.patch('/users/me', { fullName: '   ' });
+    expect(res.status).toBe(422);
+    expect(res.body.errors[0].field).toBe('fullName');
   });
 });
