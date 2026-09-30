@@ -3,6 +3,7 @@ import { EmptyState, StatusBadge } from '../../components/ui';
 import { cn } from '../../utils/cn';
 import { formatDuration, formatMoney, formatTime, todayISO } from '../../utils/format';
 import { dt, localDateOf } from './calendarUtils';
+import { ReplyIcon } from './CustomerReply';
 
 /** Horizontal strip of dates for phones. */
 export function DateStrip({ date, onChange }) {
@@ -60,7 +61,7 @@ export function AgendaView({ date, events, onEventClick, onCreate, canCreate }) 
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-1.5 truncate font-medium">
                 {e.customerName}
-                {e.checkedInAt && e.status !== 'completed' ? <CheckCircle2 className="size-3.5 text-success" aria-label="Checked in" /> : null}
+                {e.checkedInAt && e.status !== 'completed' ? <CheckCircle2 className="size-3.5 text-success" aria-label="Checked in" /> : <ReplyIcon appointment={e} />}
               </p>
               <p className="truncate text-sm text-muted">{e.services}</p>
               <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">

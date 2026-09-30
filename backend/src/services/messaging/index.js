@@ -17,25 +17,47 @@ const whatsapp = require('./providers/whatsapp');
 const PROVIDERS = { email, sms, whatsapp };
 const MAX_ATTEMPTS = 5;
 
+const PLACEHOLDER = /\{\{\s*(\w+)\s*\}\}/g;
+
 function renderTemplate(template, variables) {
-  return String(template || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_, name) =>
+  return String(template || '').replace(PLACEHOLDER, (_, name) =>
     variables[name] !== undefined && variables[name] !== null ? String(variables[name]) : '');
 }
 
-/** Deliver immediately (used for password resets and "send test message"). */
-async function sendNow({ channel, to, subject, body, html }) {
+/**
+ * Values for an approved WhatsApp template, in the order the placeholders
+ * first appear in the message text: "Hello {{customer_name}}, … {{date}}"
+ * gives [customer name, date]. The approved template uses {{1}}, {{2}}, …
+ * in the same order. WhatsApp rejects empty values, tabs, new lines and runs
+ * of spaces inside a value, so those are tidied.
+ */
+function templateParams(template, variables) {
+  const names = [];
+  for (const [, name] of String(template || '').matchAll(PLACEHOLDER)) if (!names.includes(name)) names.push(name);
+  return names.map((name) => {
+    const value = variables[name] === undefined || variables[name] === null ? '' : String(variables[name]);
+    return value.replace(/\s+/g, ' ').trim().slice(0, 1000) || '-';
+  });
+}
+
+/**
+ * Deliver immediately (used for password resets and "send test message").
+ * event/params: for WhatsApp, the notification type and the values for its
+ * approved template, when one is set up in Settings → Integrations.
+ */
+async function sendNow({ channel, to, subject, body, html, event = null, params = null }) {
   const provider = PROVIDERS[channel];
   if (!provider) throw new Error(`Unknown channel ${channel}`);
-  return provider.send({ to, subject, body, html });
+  return provider.send({ to, subject, body, html, event, params });
 }
 
 /** Queue a message for background delivery. Returns the message log id. */
-async function enqueue({ channel, recipient, subject = null, body, template = null, customerId = null, branchId = null, relatedType = null, relatedId = null, createdBy = null, scheduledAt = null }, conn = null) {
+async function enqueue({ channel, recipient, subject = null, body, template = null, templateParams: params = null, customerId = null, branchId = null, relatedType = null, relatedId = null, createdBy = null, scheduledAt = null }, conn = null) {
   if (!recipient) return null;
   const result = await db.query(
-    `INSERT INTO message_logs (branch_id, customer_id, channel, recipient, subject, body, template, related_type, related_id, created_by, scheduled_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, UTC_TIMESTAMP()))`,
-    [branchId, customerId, channel, recipient, subject, body, template, relatedType, relatedId, createdBy, scheduledAt],
+    `INSERT INTO message_logs (branch_id, customer_id, channel, recipient, subject, body, template, template_params, related_type, related_id, created_by, scheduled_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, UTC_TIMESTAMP()))`,
+    [branchId, customerId, channel, recipient, subject, body, template, params ? JSON.stringify(params) : null, relatedType, relatedId, createdBy, scheduledAt],
     conn,
   );
   return result.insertId;
@@ -52,7 +74,8 @@ async function notifyCustomer(event, customer, variables, meta = {}, conn = null
   const template = settings.get('notifications.templates')?.[event];
   if (!channels.length || !template) return [];
 
-  const body = renderTemplate(template, { salon_name: settings.get('business.salon_name'), ...variables });
+  const values = { salon_name: settings.get('business.salon_name'), ...variables };
+  const body = renderTemplate(template, values);
   const ids = [];
   for (const channel of channels) {
     const recipient = channel === 'email' ? customer.email : customer.phone;
@@ -63,6 +86,7 @@ async function notifyCustomer(event, customer, variables, meta = {}, conn = null
       subject: channel === 'email' ? `${settings.get('business.salon_name')} — ${event.replace(/_/g, ' ')}` : null,
       body,
       template: event,
+      templateParams: channel === 'whatsapp' ? templateParams(template, values) : null,
       customerId: customer.id,
       ...meta,
     }, conn);
@@ -75,7 +99,7 @@ async function notifyCustomer(event, customer, variables, meta = {}, conn = null
 async function processQueue({ batchSize = 20 } = {}) {
   await settings.ensureFresh();
   const due = await db.query(
-    `SELECT id, channel, recipient, subject, body, attempts FROM message_logs
+    `SELECT id, channel, recipient, subject, body, template, template_params, attempts FROM message_logs
      WHERE status = 'queued' AND scheduled_at <= UTC_TIMESTAMP()
      ORDER BY scheduled_at LIMIT ?`,
     [batchSize],
@@ -89,7 +113,14 @@ async function processQueue({ batchSize = 20 } = {}) {
     );
     if (!claim.affectedRows) continue;
     try {
-      const result = await sendNow({ channel: message.channel, to: message.recipient, subject: message.subject, body: message.body });
+      const result = await sendNow({
+        channel: message.channel,
+        to: message.recipient,
+        subject: message.subject,
+        body: message.body,
+        event: message.template,
+        params: message.template_params,
+      });
       await db.query(
         "UPDATE message_logs SET status = 'sent', provider = ?, provider_ref = ?, sent_at = UTC_TIMESTAMP(), last_error = NULL WHERE id = ?",
         [result.provider, result.providerRef, message.id],
@@ -111,4 +142,4 @@ async function processQueue({ batchSize = 20 } = {}) {
   return { processed: due.length, sent };
 }
 
-module.exports = { renderTemplate, sendNow, enqueue, notifyCustomer, processQueue, emailConfigured: email.isConfigured };
+module.exports = { renderTemplate, templateParams, sendNow, enqueue, notifyCustomer, processQueue, emailConfigured: email.isConfigured };

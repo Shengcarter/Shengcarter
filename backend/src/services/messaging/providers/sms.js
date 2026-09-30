@@ -36,7 +36,8 @@ async function sendAfricasTalking({ to, body }) {
   return { providerRef: recipient.messageId };
 }
 
-async function sendTwilio({ to, body }, { whatsapp = false } = {}) {
+/** content: { contentSid, contentVariables } sends an approved WhatsApp template instead of the text. */
+async function sendTwilio({ to, body }, { whatsapp = false, content = null } = {}) {
   const sid = settings.get('integrations.twilio_account_sid') || config.integrations.sms.twilioAccountSid;
   const token = settings.getSecret('integrations.twilio_auth_token');
   const from = settings.get('integrations.twilio_from') || config.integrations.sms.twilioFrom;
@@ -49,7 +50,11 @@ async function sendTwilio({ to, body }, { whatsapp = false } = {}) {
       Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({ To: `${prefix}${to}`, From: `${prefix}${from}`, Body: body }),
+    body: new URLSearchParams({
+      To: `${prefix}${to}`,
+      From: `${prefix}${from}`,
+      ...(content ? { ContentSid: content.contentSid, ContentVariables: JSON.stringify(content.contentVariables) } : { Body: body }),
+    }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const data = await response.json().catch(() => ({}));

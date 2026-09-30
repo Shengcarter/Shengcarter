@@ -47,7 +47,8 @@ messageRouter.get(
   validate({
     query: listQuery.extend({
       channel: z.enum(['email', 'sms', 'whatsapp']).optional(),
-      status: z.enum(['queued', 'sent', 'failed', 'skipped']).optional(),
+      status: z.enum(['queued', 'sent', 'failed', 'skipped', 'received']).optional(),
+      direction: z.enum(['outbound', 'inbound']).optional(),
       customerId: optionalId,
     }),
   }),

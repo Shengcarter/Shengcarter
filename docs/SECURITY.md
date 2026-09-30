@@ -58,6 +58,11 @@ Main threats considered: a staff member using more rights than their role allows
 - Spreadsheet imports (`.xlsx` / `.csv`) are read in memory and never saved to disk; an `.xlsx` must start like a ZIP package and a CSV must be plain text, with at most 5,000 rows. Rows are validated like forms, and nothing is saved until every row passes (or problem rows are explicitly skipped).
 - Files get random, unguessable names; the original name is never used as a path. Uploads are served with `nosniff`, and hidden files are refused.
 
+### WhatsApp webhook
+- `/api/webhooks/whatsapp` is the only unauthenticated endpoint that changes data. Every request must be signed by the provider: Meta with HMAC-SHA256 of the exact body using the app secret, Twilio with HMAC-SHA1 of the URL and fields using the auth token. Signatures are compared in constant time; without a saved secret all requests are refused.
+- A reply can only confirm an appointment, record a delay, note a request to cancel (staff decide) or stop messages for that number. It never cancels, moves or bills anything. Messages resent by WhatsApp are recognised by their message ID and handled once.
+- Webhooks have their own rate limit (600 per minute) so delivery reports for large promotions are not throttled by the general API limit.
+
 ### Exports
 - CSV cells that start with `=`, `+`, `-` or `@` are neutralised so spreadsheets do not run them as formulas.
 - Every export is recorded in the activity log with the report and period; heavy endpoints are rate-limited per user.

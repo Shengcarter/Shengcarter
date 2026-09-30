@@ -18,6 +18,7 @@ const loyaltyRoutes = require('./loyaltyRoutes');
 const commerce = require('./commerceRoutes');
 const insight = require('./reportRoutes');
 const importRoutes = require('./importRoutes');
+const webhookRoutes = require('./webhookRoutes');
 
 /**
  * API route map. Everything below `authenticate` requires a valid access token;
@@ -38,6 +39,7 @@ router.get('/health', async (_req, res) => {
 
 router.use('/auth', authRoutes);
 router.use('/public', publicRoutes);
+router.use('/webhooks', webhookRoutes);
 
 router.use(authenticate);
 

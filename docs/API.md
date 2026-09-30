@@ -62,6 +62,10 @@ Each endpoint requires one of the permissions listed. Roles are editable in Sett
 | GET | `/health` | Health check (database reachable) |
 | GET | `/public/branding` | Salon name and logo for the sign-in page |
 | GET | `/public/appointments/:token` | QR verification — appointment code, date/time, services and status only (no personal data) |
+| GET | `/webhooks/whatsapp` | Meta webhook verification (`hub.verify_token` must match *Settings → Integrations*) |
+| POST | `/webhooks/whatsapp` | Customer replies and delivery reports from WhatsApp. Meta requests must carry `X-Hub-Signature-256` (app secret), Twilio requests `X-Twilio-Signature` (auth token); anything else gets 401 |
+
+Replies are matched to the appointment the customer answered (or their next one): *YES / OK / SAWA / NDIYO / 👍* confirm it, *LATE 15 / NITACHELEWA DAKIKA 15* record a delay, *CANCEL / NO / SITAKUJA* ask the front desk to call, *STOP / ACHA* turn off automatic messages; anything else becomes a notification for the front desk. Appointments expose `customerResponse` (`confirmed`, `late`, `cancel_request`), `customerDelayMinutes`, `customerResponseNote` and `customerResponseAt`; changing the time clears them.
 
 ### Dashboard, reports and insights
 
@@ -206,7 +210,7 @@ Adjustment types: `stock_in`, `stock_out`, `adjustment` (counted quantity), `dam
 | PUT | `/loyalty/program`; POST / PATCH / DELETE `/loyalty/tiers[/:id]` | `loyalty.manage` |
 | GET | `/notifications`, `/notifications/unread-count` | signed in (own) |
 | POST | `/notifications/:id/read`, `/notifications/read-all` | signed in |
-| GET | `/messages` | `notifications.send` |
+| GET | `/messages` (`channel`, `status`, `direction`: `outbound` or `inbound`, `search`, `customerId`) | `notifications.send` |
 | POST | `/messages/send` `{ channel, audience, customerIds?, tierId?, inactiveDays?, subject?, message }` | `notifications.send` |
 | POST | `/messages/:id/retry` | `notifications.send` |
 | GET | `/search?q=` | signed in (results limited to what the role may see) |

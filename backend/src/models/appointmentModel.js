@@ -10,6 +10,7 @@ const BLOCKING_EXCLUDED = ['cancelled', 'no_show'];
 
 const LIST_COLUMNS = `a.id, a.code, a.branch_id, a.customer_id, a.employee_id, a.start_time, a.end_time, a.status, a.source,
   a.notes, a.total_price, a.total_duration, a.checked_in_at, a.created_at,
+  a.customer_response, a.customer_response_at, a.customer_delay_minutes,
   c.full_name AS customer_name, c.phone AS customer_phone, c.code AS customer_code,
   e.full_name AS employee_name, e.calendar_color AS employee_color,
   (SELECT GROUP_CONCAT(aps.service_name ORDER BY aps.sort_order SEPARATOR ', ') FROM appointment_services aps WHERE aps.appointment_id = a.id) AS services,

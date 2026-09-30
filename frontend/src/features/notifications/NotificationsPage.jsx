@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { BellOff, CheckCheck } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, PageHeader, Pagination, SkeletonRows, Tabs } from '../../components/ui';
 import { NotificationItem } from './NotificationItem';
@@ -66,7 +66,9 @@ function Inbox() {
 export default function NotificationsPage() {
   useDocumentTitle('Notifications');
   const can = usePermission();
-  const [tab, setTab] = useState('inbox');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') === 'messages' ? 'messages' : 'inbox';
+  const setTab = (value) => setSearchParams(value === 'messages' ? { tab: 'messages' } : {}, { replace: true });
   const canMessage = can('notifications.send');
 
   return (

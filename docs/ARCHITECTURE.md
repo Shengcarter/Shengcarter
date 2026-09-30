@@ -166,7 +166,7 @@ To add a permission: insert it in `database/seed.sql` (and a migration for exist
 
 ## 8. Messaging and AI providers
 
-**Messaging** (`services/messaging`): each channel has a provider module — email (SMTP via nodemailer), SMS (Africa's Talking, Twilio), WhatsApp (Meta Cloud API, Twilio). Credentials come from *Settings → Integrations* or `.env`. Without credentials the provider is `log`: the message is recorded in `message_logs` as not sent, and nothing fails. Messages are queued, sent by the job with retries, and every attempt is logged. Promotional messages go only to customers who opted in.
+**Messaging** (`services/messaging`): each channel has a provider module — email (SMTP via nodemailer), SMS (Africa's Talking, Twilio), WhatsApp (Meta Cloud API, Twilio). Credentials come from *Settings → Integrations* or `.env`. Without credentials the provider is `log`: the message is recorded in `message_logs` as not sent, and nothing fails. Messages are queued, sent by the job with retries, and every attempt is logged. Promotional messages go only to customers who opted in. WhatsApp messages the salon starts are sent as Meta-approved templates when one is configured per message type: the queue stores the values in placeholder order (`template_params`) and the provider sends them as `{{1}}`, `{{2}}`, …. Customer replies arrive at the signed webhook (`routes/webhookRoutes.js`) and `services/messaging/replies.js` classifies them (English and Swahili), updates the appointment, answers the customer and alerts staff; incoming messages are stored in `message_logs` with `direction = 'inbound'`.
 
 **Insights** (`services/insightService.js`): a rule engine computes trends, risks and opportunities from aggregated figures (sales vs. previous period, retention, low stock, top/bottom services, staff utilisation, overdue balances). If `AI_PROVIDER=anthropic` and `AI_API_KEY` are set, the same aggregated figures (no customer names or phone numbers) are sent to the Claude API for a written summary; on any error or refusal the rule-based text is used.
 
@@ -205,7 +205,7 @@ Profit & loss is on a cash basis: net sales − cost of goods sold (purchase pri
 
 | Suite | Tool | Covers |
 | --- | --- | --- |
-| `backend/tests/*.test.js` | Jest + Supertest | authentication and sessions, permissions per role, customer CRUD, appointment conflicts, POS sales/payments/refunds and concurrency, Excel/CSV imports, inventory ledger, reports and exports, financial calculations, backups |
+| `backend/tests/*.test.js` | Jest + Supertest | authentication and sessions, permissions per role, customer CRUD, appointment conflicts, POS sales/payments/refunds and concurrency, Excel/CSV imports, WhatsApp messages and replies, inventory ledger, reports and exports, financial calculations, backups |
 | `frontend/src/**/*.test.js` | Vitest | formatting and report period helpers |
 
 Backend tests create a throw-away database `zola_stylish_test` (dropped and recreated per run) using the same schema, migrations and seed as production. Run `npm test` in `backend/` and `frontend/`.

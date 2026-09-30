@@ -374,6 +374,6 @@ Docker: `git pull && docker compose up -d --build` (migrations run automatically
 - [ ] Business name, logo, currency, tax, time zone and receipt settings filled in (*Settings*)
 - [ ] Demo data removed (`npm --prefix backend run demo:clear`) and `SEED_DEMO_DATA=false`
 - [ ] Automatic backups on, **and** copies stored off the server; a restore tested once on a spare computer
-- [ ] Messaging credentials entered in *Settings → Integrations* (optional) and a test message sent
+- [ ] Messaging credentials entered in *Settings → Integrations* (optional) and a test message sent; for WhatsApp confirmations, replies and thank-you messages follow [WHATSAPP.md](WHATSAPP.md)
 - [ ] Server does not sleep; Windows Update active hours set; UPS for the salon computer
 - [ ] Operating system, Node.js and MySQL receive security updates (`unattended-upgrades` on Ubuntu)

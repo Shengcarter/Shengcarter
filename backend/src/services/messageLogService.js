@@ -24,6 +24,10 @@ async function list(filters) {
     where.push('m.status = ?');
     params.push(filters.status);
   }
+  if (filters.direction) {
+    where.push('m.direction = ?');
+    params.push(filters.direction);
+  }
   if (filters.customerId) {
     where.push('m.customer_id = ?');
     params.push(filters.customerId);
@@ -33,8 +37,9 @@ async function list(filters) {
     params.push(contains(filters.search), contains(filters.search), contains(filters.search));
   }
   const result = await paginate({
-    select: `m.id, m.channel, m.provider, m.recipient, m.subject, m.body, m.template, m.status, m.attempts,
-             m.last_error, m.sent_at, m.scheduled_at, m.created_at, c.id AS customer_id, c.full_name AS customer_name`,
+    select: `m.id, m.channel, m.direction, m.provider, m.recipient, m.subject, m.body, m.template, m.status, m.attempts,
+             m.last_error, m.sent_at, m.scheduled_at, m.created_at, m.related_type, m.related_id,
+             c.id AS customer_id, c.full_name AS customer_name`,
     from: `FROM message_logs m LEFT JOIN customers c ON c.id = m.customer_id WHERE ${where.join(' AND ')}`,
     params,
     orderBy: 'm.created_at DESC, m.id DESC',

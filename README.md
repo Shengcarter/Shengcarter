@@ -23,7 +23,7 @@ A complete salon ERP and point-of-sale system for beauty salons and barbershops:
 15. [API documentation](#15-api-documentation)
 16. [Troubleshooting](#16-troubleshooting)
 
-More documentation: [Deployment guide](docs/DEPLOYMENT.md) · [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [API reference](docs/API.md)
+More documentation: [Deployment guide](docs/DEPLOYMENT.md) · [WhatsApp setup](docs/WHATSAPP.md) · [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [API reference](docs/API.md)
 
 ---
 
@@ -42,7 +42,7 @@ More documentation: [Deployment guide](docs/DEPLOYMENT.md) · [Architecture](doc
 | **Expenses** | Categories, receipts (image/PDF), vendors; salary payments are recorded automatically. |
 | **Reports** | Sales, customers, services, staff, inventory, expenses, profit & loss and branch comparison — exportable to **PDF, Excel and CSV**. |
 | **Insights** | Built-in analysis of trends, risks and opportunities (works offline), with an optional AI-written summary. |
-| **Messaging** | SMS, WhatsApp and email (appointment confirmations, reminders, receipts, promotions to opted-in customers, win-back and birthday campaigns) with a delivery log. |
+| **Messaging** | WhatsApp, SMS and email: booking confirmations and reminders that ask the customer to **reply YES to confirm or LATE 15 if running late** (replies update the calendar and alert the front desk), a **thank-you after payment**, cancellations, promotions to opted-in customers, win-back and birthday campaigns — with a log of every message sent and received. Setup: [docs/WHATSAPP.md](docs/WHATSAPP.md). |
 | **Administration** | Users, roles and permissions, branches, business/financial/system settings, integrations, loyalty programme, activity (audit) log, backups. |
 
 **Bringing in records kept in Excel:** on the **Customers** page and the **Sales history** page, choose **Import** and pick an Excel (`.xlsx`) or CSV file — or first **Download template**, a ready-made sheet with the right columns and drop-down lists of your services, products and staff. The system reads column names loosely (English or Swahili, e.g. *Phone*, *Simu*), then shows every row as *Ready*, *Skipped* (already in the system) or *Problem* (with the reason) before anything is saved. Nothing is imported until you confirm; you can import only the good rows, and the import is all-or-nothing. Imported sales keep their original date and exact amounts, are marked *Imported*, and do not change stock, commissions or loyalty points; importing the same file again adds nothing twice.
@@ -155,7 +155,7 @@ All configuration lives in one `.env` file in the project root (copy [`.env.exam
 | `SMTP_HOST` / `_PORT` / `_SECURE` / `_USER` / `_PASSWORD`, `EMAIL_FROM` | Email delivery | – |
 | `SMS_USERNAME`, `SMS_API_KEY` | Africa's Talking SMS | – |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | Twilio SMS/WhatsApp | – |
-| `WHATSAPP_API_KEY`, `WHATSAPP_PHONE_NUMBER_ID` | Meta WhatsApp Cloud API | – |
+| `WHATSAPP_API_KEY`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET` | Meta WhatsApp Cloud API (the app secret checks incoming replies); can also be entered in *Settings → Integrations* | – |
 | `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL` | Optional AI insight summaries (`anthropic`; model defaults to `claude-opus-5`) | – |
 | `UPLOAD_DIR`, `BACKUP_DIR`, `MAX_UPLOAD_MB` | Storage (relative paths are inside `backend/`) | `storage/uploads`, `storage/backups`, `5` |
 | `LOG_LEVEL`, `LOG_FILE`, `LOG_MAX_MB`, `LOG_KEEP_FILES` | Logging; the file is rotated at `LOG_MAX_MB` (`app.log.1` … `app.log.5`) | `info`, `logs/app.log`, `20`, `5` |

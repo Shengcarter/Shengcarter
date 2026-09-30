@@ -37,6 +37,24 @@ function moneySettings() {
   };
 }
 
+/** "TZS 40,000" for customer messages. */
+function formatAmount(value) {
+  const { decimals } = moneySettings();
+  const amount = Number(value).toLocaleString('en', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  return `${settings.get('financial.currency_code') || ''} ${amount}`.trim();
+}
+
+/** Thank-you message after the customer pays (Settings → Notifications). */
+function sendThankYou(customer, { amount, invoiceNumber, saleId }, ctx, conn) {
+  return messaging.notifyCustomer(
+    'payment_receipt',
+    customer,
+    { customer_name: customer.full_name.split(' ')[0], amount: formatAmount(amount), invoice_number: invoiceNumber },
+    { branchId: ctx.branchId, relatedType: 'sale', relatedId: saleId, createdBy: ctx.userId },
+    conn,
+  );
+}
+
 async function nextDocumentNumbers(conn) {
   const padding = Number(settings.get('financial.number_padding') || 6);
   const invoice = await nextSequenceValue(conn, 'invoice');
@@ -251,13 +269,7 @@ async function createSale(data, ctx, options = {}) {
     }, conn);
 
     if (customer && paid.amountPaid.greaterThan(0)) {
-      await messaging.notifyCustomer(
-        'payment_receipt',
-        customer,
-        { customer_name: customer.full_name.split(' ')[0], amount: toNumber(paid.amountPaid).toLocaleString('en'), invoice_number: numbers.invoiceNumber },
-        { branchId: ctx.branchId, relatedType: 'sale', relatedId: saleId, createdBy: ctx.userId },
-        conn,
-      );
+      await sendThankYou(customer, { amount: toNumber(paid.amountPaid), invoiceNumber: numbers.invoiceNumber, saleId }, ctx, conn);
     }
     return { saleId, productIds: lines.filter((l) => l.productId).map((l) => l.productId) };
   });
@@ -485,6 +497,11 @@ async function recordPayment(saleId, data, ctx) {
       action: 'sale.payment_recorded', entityType: 'sale', entityId: sale.id,
       description: `Received ${toNumber(paid.amountPaid)} (${data.method}) on ${sale.invoice_number}`,
     }, conn);
+    // Served now, paid later: the thank-you goes with the first payment.
+    if (sale.customer_id && D(sale.amount_paid).lessThanOrEqualTo(0)) {
+      const customer = await db.queryOne('SELECT id, full_name, phone, email, preferred_channel FROM customers WHERE id = ? AND deleted_at IS NULL', [sale.customer_id], conn);
+      if (customer) await sendThankYou(customer, { amount: toNumber(paid.amountPaid), invoiceNumber: sale.invoice_number, saleId: sale.id }, ctx, conn);
+    }
     return { sale, received: toNumber(paid.amountPaid), change: toNumber(paid.change), balance: toNumber(balance) };
   });
 

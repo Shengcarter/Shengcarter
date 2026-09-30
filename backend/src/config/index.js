@@ -88,6 +88,7 @@ const envSchema = z.object({
 
   WHATSAPP_API_KEY: str(''),
   WHATSAPP_PHONE_NUMBER_ID: str(''),
+  WHATSAPP_APP_SECRET: str(''),
 
   AI_PROVIDER: str(''),
   AI_API_KEY: str(''),
@@ -182,6 +183,7 @@ const config = Object.freeze({
     whatsapp: {
       apiKey: env.WHATSAPP_API_KEY,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
+      appSecret: env.WHATSAPP_APP_SECRET,
     },
     ai: {
       provider: env.AI_PROVIDER,
