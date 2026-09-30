@@ -11,7 +11,7 @@ const audit = require('./auditService');
 
 const COLUMNS = `e.id, e.branch_id, e.category_id, c.name AS category_name, e.expense_date, e.amount, e.description, e.payment_method,
   e.reference, e.vendor, e.attachment, e.recorded_by, u.full_name AS recorded_by_name, e.created_at, e.updated_at,
-  (SELECT sr.id FROM salary_records sr WHERE sr.expense_id = e.id LIMIT 1) AS salary_record_id`;
+  (SELECT sr.id FROM salary_records sr WHERE sr.expense_id = e.id LIMIT 1) AS payout_id`;
 const JOINS = 'FROM expenses e JOIN expense_categories c ON c.id = e.category_id LEFT JOIN users u ON u.id = e.recorded_by';
 
 async function list(filters, ctx) {
@@ -84,7 +84,7 @@ async function create(data, ctx) {
 
 async function update(id, data, ctx) {
   const existing = await getById(id, ctx);
-  if (existing.salaryRecordId) throw ApiError.badRequest('This expense was created by a salary payment. Edit the salary record instead.');
+  if (existing.payoutId) throw ApiError.badRequest('This expense was created by a commission payout (Employees → Commission payouts) and cannot be edited here.');
   if (data.categoryId) await assertCategory(data.categoryId);
   const map = { categoryId: 'category_id', expenseDate: 'expense_date', amount: 'amount', description: 'description', paymentMethod: 'payment_method', reference: 'reference', vendor: 'vendor' };
   const entries = Object.entries(map).filter(([k]) => data[k] !== undefined);
@@ -100,7 +100,7 @@ async function update(id, data, ctx) {
 
 async function remove(id, ctx) {
   const existing = await getById(id, ctx);
-  if (existing.salaryRecordId) throw ApiError.badRequest('This expense belongs to a paid salary record and cannot be deleted');
+  if (existing.payoutId) throw ApiError.badRequest('This expense belongs to a paid commission payout and cannot be deleted');
   await db.query('DELETE FROM expenses WHERE id = ?', [id]);
   await audit.record(ctx, { action: 'expense.deleted', entityType: 'expense', entityId: id, description: `Deleted expense ${existing.amount}: ${existing.description}` });
   return existing.attachment;
@@ -138,7 +138,7 @@ async function saveCategory(id, data, ctx) {
 async function deleteCategory(id, ctx) {
   const category = await db.queryOne('SELECT slug FROM expense_categories WHERE id = ?', [id]);
   if (!category) throw ApiError.notFound('Category not found');
-  if (category.slug === 'salaries') throw ApiError.badRequest('The Salaries category is used by payroll and cannot be deleted');
+  if (['staff_commissions', 'salaries'].includes(category.slug)) throw ApiError.badRequest('The Staff commissions category is used for commission payouts and cannot be deleted');
   const used = await db.queryOne('SELECT COUNT(*) AS total FROM expenses WHERE category_id = ?', [id]);
   if (Number(used.total)) throw ApiError.conflict('This category has expenses. Deactivate it instead.');
   await db.query('DELETE FROM expense_categories WHERE id = ?', [id]);

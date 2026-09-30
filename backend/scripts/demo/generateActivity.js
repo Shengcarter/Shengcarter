@@ -94,7 +94,7 @@ function cashTendered(total) {
 
 class Timeline {
   constructor() {
-    this.stats = { customers: 0, appointments: 0, sales: 0, refunds: 0, purchases: 0, expenses: 0, salaries: 0, attendance: 0 };
+    this.stats = { customers: 0, appointments: 0, sales: 0, refunds: 0, purchases: 0, expenses: 0, payouts: 0, attendance: 0 };
     this.customerSlots = new Map(); // `${customerId}|${date}` -> [{start, end}]
     this.pendingSupplierPayments = []; // { date, purchaseId, amount }
     this.pendingRefunds = []; // { date, saleId }
@@ -316,6 +316,7 @@ async function insertAppointment(conn, booking, { status, adminId, branchId, now
     [booking.services.map((s, i) => [result.insertId, s.id, s.name, s.price, s.duration_minutes, i])],
     conn,
   );
+  await db.query('INSERT INTO appointment_staff (appointment_id, employee_id, sort_order) VALUES (?, ?, 0)', [result.insertId, booking.employee.id], conn);
   return result.insertId;
 }
 
@@ -464,7 +465,7 @@ async function runPayroll(monthStart, ctx, timeline) {
     const paidAt = toUtc(paidDate.set({ hour: 17, minute: int(0, 40) }));
     await db.query('UPDATE salary_records SET is_demo = 1, paid_at = ?, created_at = ? WHERE id = ?', [paidAt, toUtc(paidDate.set({ hour: 9 })), record.id]);
     await db.query('UPDATE expenses e JOIN salary_records r ON r.expense_id = e.id SET e.is_demo = 1, e.created_at = ? WHERE r.id = ?', [paidAt, record.id]);
-    timeline.stats.salaries += 1;
+    timeline.stats.payouts += 1;
   }
 }
 
@@ -514,7 +515,7 @@ module.exports = async function generateActivity() {
 
   let currentMonth = null;
   for (let date = periodStart; date <= today; date = date.plus({ days: 1 })) {
-    // Month boundaries: pay last month's salaries, then book this month's fixed costs.
+    // Month boundaries: pay out last month's commission, then book this month's fixed costs.
     if (!currentMonth || !date.hasSame(currentMonth, 'month')) {
       if (currentMonth) await runPayroll(currentMonth, adminCtx, timeline);
       currentMonth = date.startOf('month');
@@ -649,7 +650,7 @@ module.exports = async function generateActivity() {
   const s = timeline.stats;
   console.log(
     `✔ Demo activity: ${s.customers} extra customers, ${s.appointments} appointments, ${s.sales} sales (${s.refunds} refunded), ` +
-      `${s.purchases} purchases, ${s.expenses} expenses, ${s.salaries} salary payments, ${s.attendance} attendance records ` +
+      `${s.purchases} purchases, ${s.expenses} expenses, ${s.payouts} commission payouts, ${s.attendance} attendance records ` +
       `(${Math.round((Date.now() - began) / 1000)}s).`,
   );
 };

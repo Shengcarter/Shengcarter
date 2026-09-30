@@ -150,3 +150,11 @@ export const STATUS_STYLES = {
 };
 
 export const EDITABLE_STATUSES = ['pending', 'confirmed'];
+
+/** The appointment's staff by first name: "Neema", "Neema & Rehema", "Neema, Rehema & Grace". */
+export function staffNames(appointment, { full = false } = {}) {
+  const names = (appointment.staff?.length ? appointment.staff.map((m) => m.fullName) : [appointment.employeeName])
+    .filter(Boolean)
+    .map((n) => (full ? n : n.split(' ')[0]));
+  return names.length <= 1 ? names[0] || '' : `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+}

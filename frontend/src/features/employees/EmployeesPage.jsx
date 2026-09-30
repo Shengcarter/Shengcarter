@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, UserRoundCheck } from 'lucide-react';
 import { Avatar, Badge, Button, Card, DataTable, EmptyState, PageHeader, Pagination, SearchInput, StatusBadge, Tabs } from '../../components/ui';
-import { formatDate, formatMoney } from '../../utils/format';
+import { formatDate } from '../../utils/format';
 import { usePermission, useDocumentTitle } from '../../hooks';
 import { useEmployees } from './api';
 import { EmployeeFormModal } from './EmployeeFormModal';
@@ -16,7 +16,6 @@ function StaffList() {
   const [params, setParams] = useState({ page: 1, limit: 20, search: '', status: '' });
   const employees = useEmployees(params);
   const [creating, setCreating] = useState(false);
-  const canSeePay = can('employees.manage') || can('payroll.manage');
 
   const columns = [
     {
@@ -39,7 +38,6 @@ function StaffList() {
     { key: 'phone', header: 'Phone', render: (e) => e.phone || '—' },
     { key: 'serviceCount', header: 'Services', align: 'right' },
     { key: 'commissionRate', header: 'Commission', align: 'right', render: (e) => `${e.commissionRate}%` },
-    ...(canSeePay ? [{ key: 'salary', header: 'Salary', align: 'right', hideOnMobile: true, render: (e) => formatMoney(e.salary) }] : []),
     { key: 'employmentDate', header: 'Since', hideOnMobile: true, render: (e) => formatDate(e.employmentDate) },
     {
       key: 'status',
@@ -90,13 +88,13 @@ export default function EmployeesPage() {
     { value: 'staff', label: 'Staff' },
     ...(can(['attendance.view', 'attendance.manage']) ? [{ value: 'attendance', label: 'Attendance' }] : []),
     ...(can(['leave.manage', 'employees.view']) ? [{ value: 'leave', label: 'Leave' }] : []),
-    ...(can('payroll.manage') ? [{ value: 'payroll', label: 'Payroll' }] : []),
+    ...(can('payroll.manage') ? [{ value: 'payroll', label: 'Commission payouts' }] : []),
   ];
   const tab = tabs.some((t) => t.value === params.get('tab')) ? params.get('tab') : 'staff';
 
   return (
     <div>
-      <PageHeader title="Employees" description="Staff profiles, schedules, attendance, leave and performance." />
+      <PageHeader title="Employees" description="Staff profiles, schedules, attendance, leave, performance and commission." />
       <Tabs className="mb-5" tabs={tabs} value={tab} onChange={(value) => setParams({ tab: value })} />
       {tab === 'staff' ? <StaffList /> : null}
       {tab === 'attendance' ? <AttendancePanel /> : null}

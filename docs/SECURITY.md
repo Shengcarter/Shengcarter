@@ -9,7 +9,7 @@ What ZOLA STYLISH MANAGEMENT SYSTEM does to protect the salon's data, what the p
 | Data | Why it matters |
 | --- | --- |
 | Customer records (names, phone numbers, emails, birthdays, notes, photos) | Personal data — privacy law and customer trust |
-| Sales, payments, expenses, payroll, commissions | Financial records — fraud and accuracy |
+| Sales, payments, expenses, commission payouts | Financial records — fraud and accuracy |
 | Staff accounts and permissions | Control of everything else |
 | Integration credentials (SMS, WhatsApp, email, AI) | Misuse costs money and reputation |
 | Backups | A complete copy of all of the above |
@@ -85,7 +85,7 @@ Behind a proxy set `TRUST_PROXY` correctly so limits and logs use the real clien
 - In production, error responses never contain stack traces or SQL messages.
 
 ### Logging and audit
-- **Activity log** (*Settings → Activity log*, `audit.view`): sign-ins, failed sign-ins, lockouts, password changes and resets, user and role changes, sales, payments, refunds, stock adjustments, purchases, expenses, payroll, settings changes, exports, backups (created, downloaded, deleted) and restores — with user, branch, IP address and time. Business entries are written in the same transaction as the change.
+- **Activity log** (*Settings → Activity log*, `audit.view`): sign-ins, failed sign-ins, lockouts, password changes and resets, user and role changes, sales, payments, refunds, stock adjustments, purchases, expenses, commission payouts, settings changes, exports, backups (created, downloaded, deleted) and restores — with user, branch, IP address and time. Business entries are written in the same transaction as the change.
 - **Application log**: request method, path, status and client address. Query strings are not logged (they may contain reset tokens or searched phone numbers); passwords, tokens, cookies and authorization headers are redacted. The log file is rotated by size (`LOG_MAX_MB`, `LOG_KEEP_FILES`).
 
 ### Privacy

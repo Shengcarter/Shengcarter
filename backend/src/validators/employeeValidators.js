@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  z, id, requiredText, optionalText, optionalEmail, optionalPhone, optionalDate, isoDate, money, percent, listQuery, booleanish, optionalId,
+  z, id, requiredText, optionalText, optionalEmail, optionalPhone, optionalDate, isoDate, percent, listQuery, booleanish, optionalId,
 } = require('./common');
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24-hour) format');
@@ -27,7 +27,6 @@ const employeeBody = z.object({
   address: optionalText(255),
   jobTitle: requiredText(80, 'Role / job title'),
   employmentDate: optionalDate,
-  salary: money.optional().default(0),
   commissionRate: percent.optional().default(0),
   status: z.enum(['active', 'on_leave', 'inactive', 'terminated']).optional().default('active'),
   isBookable: z.boolean().optional().default(true),
@@ -42,7 +41,6 @@ module.exports = {
   createEmployee: employeeBody,
   updateEmployee: employeeBody
     .extend({
-      salary: money.optional(),
       commissionRate: percent.optional(),
       status: z.enum(['active', 'on_leave', 'inactive', 'terminated']).optional(),
       isBookable: z.boolean().optional(),

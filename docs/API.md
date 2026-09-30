@@ -98,16 +98,16 @@ Phone numbers are normalised to international format (`0712 345 678` → `+25571
 | --- | --- | --- |
 | GET | `/appointments` (`from`, `to`, `employeeId`, `customerId`, `status`) | `appointments.view` (all) or `appointments.view_own` (own only) |
 | GET | `/appointments/calendar?from&to&employeeId&status` | same |
-| GET | `/appointments/availability?employeeId&date&serviceIds=1,2` | `appointments.create` |
+| GET | `/appointments/availability?employeeIds=4,7&date&serviceIds=1,2` (or `employeeId`) — free only when every person is | `appointments.create` |
 | GET | `/appointments/available-employees?startTime&serviceIds` | `appointments.create` |
-| POST | `/appointments` `{ customerId, employeeId, serviceIds, startTime, notes?, source?, status? }` | `appointments.create` |
+| POST | `/appointments` `{ customerId, employeeIds: [lead, …], serviceIds, startTime, notes?, source?, status? }` (`employeeId` also accepted) | `appointments.create` |
 | GET / PATCH | `/appointments/:id` | view / `appointments.update` |
-| PATCH | `/appointments/:id/reschedule` `{ startTime, employeeId? }` | `appointments.update` |
+| PATCH | `/appointments/:id/reschedule` `{ startTime, employeeId?, fromEmployeeId? }` — moves one person's part to another | `appointments.update` |
 | POST | `/appointments/:id/status` `{ status, reason? }` | `appointments.update` / `cancel` / `complete` per status |
 | POST | `/appointments/check-in` `{ token }` · `/appointments/:id/check-in` | `appointments.checkin` |
 | GET | `/appointments/:id/qr` | view (PNG data URL) |
 
-The server rejects double bookings (same stylist or same customer), bookings outside working hours or on approved leave, past times, and services the stylist does not perform. Concurrent bookings for the same slot are serialised with row locks.
+An appointment can have up to 6 staff (`staff: [{ id, fullName, color }]` in responses; the first is the lead and `employeeId`). The server rejects double bookings (any member, or the same customer), bookings outside any member's working hours or on approved leave, past times, and services nobody in the team performs. Concurrent bookings for the same slot are serialised with row locks. Stylists see every appointment they are part of.
 
 ### Services and staff
 
@@ -125,10 +125,12 @@ The server rejects double bookings (same stylist or same customer), bookings out
 | PUT | `/attendance` (record or correct a day) | `attendance.manage` |
 | GET / POST | `/leave` | `leave.manage` (staff may request their own with `attendance.self`) |
 | PATCH | `/leave/:id/status` | `leave.manage` |
-| GET | `/payroll/commissions`, `/payroll/salaries` | `payroll.manage` |
-| POST | `/payroll/salaries/generate` `{ periodStart, periodEnd }` | `payroll.manage` |
-| PATCH / DELETE | `/payroll/salaries/:id` | `payroll.manage` |
-| POST | `/payroll/salaries/:id/pay` `{ paymentMethod, paidDate }` (records an expense) | `payroll.manage` |
+| GET | `/payroll/commissions`, `/payroll/payouts` | `payroll.manage` |
+| POST | `/payroll/payouts/generate` `{ periodStart, periodEnd, employeeIds? }` — one payout per person with unpaid commission in the period | `payroll.manage` |
+| PATCH / DELETE | `/payroll/payouts/:id` `{ bonus?, deductions?, notes? }` | `payroll.manage` |
+| POST | `/payroll/payouts/:id/pay` `{ paymentMethod, paidDate }` (records a "Staff commissions" expense) | `payroll.manage` |
+
+Staff are paid by commission only; employees have no salary field.
 
 ### Point of sale
 
@@ -151,7 +153,7 @@ Sale body:
   "customerId": 12,
   "appointmentId": 40,
   "items": [
-    { "type": "service", "serviceId": 3, "employeeId": 2 },
+    { "type": "service", "serviceId": 3, "employeeIds": [2, 5] },
     { "type": "product", "productId": 7, "quantity": 2 }
   ],
   "discount": { "type": "percentage", "value": 10 },
@@ -165,6 +167,8 @@ Sale body:
 ```
 
 Prices, discounts, tax (none by default: `financial.tax_mode` is `none`), loyalty value, change and balance are always calculated by the server from the database; any totals sent by the client are ignored. The whole sale (items, stock, commissions, payments, loyalty points, customer statistics, invoice number) is saved in one database transaction.
+
+A service line lists who performed it in `employeeIds` (1–6 people; `employeeId` is still accepted). The line's value and commission are shared equally between them, to the smallest currency unit: with the service's own commission rate the commission is split equally; without one, each person earns their own rate on their equal share. Sale details return `items[].staff: [{ id, fullName, revenueShare, commissionAmount }]`; `/sales/appointment/:id` returns the appointment's `employeeIds` for checkout.
 
 ### Imports (Excel / CSV)
 

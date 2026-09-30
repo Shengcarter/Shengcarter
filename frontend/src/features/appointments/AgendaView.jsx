@@ -2,7 +2,7 @@ import { CalendarX2, CheckCircle2 } from 'lucide-react';
 import { EmptyState, StatusBadge } from '../../components/ui';
 import { cn } from '../../utils/cn';
 import { formatDuration, formatMoney, formatTime, todayISO } from '../../utils/format';
-import { dt, localDateOf } from './calendarUtils';
+import { dt, localDateOf, staffNames } from './calendarUtils';
 import { ReplyIcon } from './CustomerReply';
 
 /** Horizontal strip of dates for phones. */
@@ -65,7 +65,7 @@ export function AgendaView({ date, events, onEventClick, onCreate, canCreate }) 
               </p>
               <p className="truncate text-sm text-muted">{e.services}</p>
               <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
-                <span>{e.employeeName}</span>·<span>{formatMoney(e.totalPrice)}</span>
+                <span>{staffNames(e)}{e.staff?.length > 1 ? ' together' : ''}</span>·<span>{formatMoney(e.totalPrice)}</span>
               </p>
             </div>
             <div className="shrink-0"><StatusBadge status={e.status} /></div>

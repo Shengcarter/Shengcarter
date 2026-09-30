@@ -181,22 +181,26 @@ payrollRouter.use(requirePermission('payroll.manage'));
 payrollRouter.get('/commissions', validate({ query: v.payroll.commissionList }), async (req, res) => {
   sendPaginated(res, await payrollService.listCommissions(req.validQuery, req.ctx));
 });
-payrollRouter.get('/salaries', validate({ query: v.payroll.salaryList }), async (req, res) => {
-  sendPaginated(res, await payrollService.listSalaryRecords(req.validQuery, req.ctx));
+// Commission payouts (the salon pays commission only).
+payrollRouter.get('/payouts', validate({ query: v.payroll.payoutList }), async (req, res) => {
+  sendPaginated(res, await payrollService.listPayouts(req.validQuery, req.ctx));
 });
-payrollRouter.post('/salaries/generate', validate({ body: v.payroll.generate }), async (req, res) => {
+payrollRouter.post('/payouts/generate', validate({ body: v.payroll.generate }), async (req, res) => {
   const result = await payrollService.generate(req.body, req.ctx);
-  sendSuccess(res, result, `${result.created} salary record(s) created${result.skipped.length ? `; ${result.skipped.length} already existed` : ''}`);
+  const parts = [`${result.created} payout${result.created === 1 ? '' : 's'} prepared`];
+  if (result.skipped.length) parts.push(`${result.skipped.length} already prepared for this period`);
+  if (result.nothingOwed.length && !result.created) parts.push('no unpaid commission in this period');
+  sendSuccess(res, result, parts.join('; '));
 });
-payrollRouter.patch('/salaries/:id', validate({ params: idParam, body: v.payroll.update }), async (req, res) => {
-  sendSuccess(res, await payrollService.updateRecord(req.params.id, req.body, req.ctx), 'Salary record updated');
+payrollRouter.patch('/payouts/:id', validate({ params: idParam, body: v.payroll.update }), async (req, res) => {
+  sendSuccess(res, await payrollService.updatePayout(req.params.id, req.body, req.ctx), 'Payout updated');
 });
-payrollRouter.post('/salaries/:id/pay', validate({ params: idParam, body: v.payroll.pay }), async (req, res) => {
-  sendSuccess(res, await payrollService.pay(req.params.id, req.body, req.ctx), 'Salary paid and recorded as an expense');
+payrollRouter.post('/payouts/:id/pay', validate({ params: idParam, body: v.payroll.pay }), async (req, res) => {
+  sendSuccess(res, await payrollService.pay(req.params.id, req.body, req.ctx), 'Commission paid and recorded as an expense');
 });
-payrollRouter.delete('/salaries/:id', validate({ params: idParam }), async (req, res) => {
-  await payrollService.removeRecord(req.params.id, req.ctx);
-  sendSuccess(res, null, 'Salary record deleted');
+payrollRouter.delete('/payouts/:id', validate({ params: idParam }), async (req, res) => {
+  await payrollService.removePayout(req.params.id, req.ctx);
+  sendSuccess(res, null, 'Payout deleted');
 });
 
 module.exports = {

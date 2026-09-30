@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Banknote, FileUp, Hourglass, ReceiptText, ShoppingBag, TrendingUp } from 'lucide-react';
 import { Badge, Button, ButtonLink, Card, DataTable, DateRange, EmptyState, FilterGroup, FilterSelect, PageHeader, Pagination, SearchInput, StatCard, StatusBadge } from '../../components/ui';
 import { formatDateTime, formatMoney, formatNumber, titleCase, todayISO } from '../../utils/format';
@@ -12,6 +12,14 @@ export default function SalesPage() {
   const can = usePermission();
   const navigate = useNavigate();
   const [importing, setImporting] = useState(false);
+  // "Import past sales" on the POS page and in Settings opens the dialog straight away.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('import') && can('sales.import')) {
+      setImporting(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams, can]);
   const [params, setParams] = useState({ page: 1, limit: 20, search: '', from: todayISO().slice(0, 8) + '01', to: todayISO(), status: '', paymentStatus: '', method: '' });
   const sales = useSales(params);
   const set = (patch) => setParams((p) => ({ ...p, page: 1, ...patch }));
@@ -39,7 +47,8 @@ export default function SalesPage() {
         intro={
           <>
             <p>Bring in sales you recorded elsewhere, for example in an Excel sheet before using this system. One row per service or product; rows with the same receipt number become one sale.</p>
-            <p>Services, products and staff are matched by name, and customers by phone number (a new phone with a name adds the customer).</p>
+            <p>Services, products and staff are matched by name, so <strong>add your services, products and staff first</strong> (the template lists them). Customers are matched by phone number; a new phone with a name adds the customer.</p>
+            <p>When several people did a service together, put all their names in the Staff column, e.g. “Neema &amp; Rehema”.</p>
           </>
         }
         notice="Imported sales count in reports, staff performance and customer history. They do not change stock, earn loyalty points or create staff commission, because that already happened outside the system. Sales with a receipt number that was imported before are skipped."

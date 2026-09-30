@@ -11,7 +11,7 @@ import { useAuthStore } from '../../store/authStore';
 import { formatDateTime, formatDuration, formatMoney, formatTime, formatDate, titleCase, todayISO } from '../../utils/format';
 import { usePermission } from '../../hooks';
 import { appointmentApi, appointmentKeys, useAppointment, useAppointmentQr } from './api';
-import { EDITABLE_STATUSES, localDateOf } from './calendarUtils';
+import { EDITABLE_STATUSES, localDateOf, staffNames } from './calendarUtils';
 import { ReplyBadge, ReplyNote } from './CustomerReply';
 
 /** Printable appointment slip (A4 or thermal). */
@@ -29,7 +29,7 @@ function AppointmentSlip({ appointment, qr }) {
           <tr><td style={{ color: '#555' }}>Customer</td><td style={{ textAlign: 'right' }}>{appointment.customerName}</td></tr>
           <tr><td style={{ color: '#555' }}>Date</td><td style={{ textAlign: 'right' }}>{formatDate(appointment.startTime, 'cccc dd LLL yyyy')}</td></tr>
           <tr><td style={{ color: '#555' }}>Time</td><td style={{ textAlign: 'right' }}>{formatTime(appointment.startTime)} – {formatTime(appointment.endTime)}</td></tr>
-          <tr><td style={{ color: '#555' }}>Stylist</td><td style={{ textAlign: 'right' }}>{appointment.employeeName}</td></tr>
+          <tr><td style={{ color: '#555' }}>{appointment.staff?.length > 1 ? 'Staff' : 'Stylist'}</td><td style={{ textAlign: 'right' }}>{staffNames(appointment, { full: true })}</td></tr>
         </tbody>
       </table>
       <hr style={{ margin: '12px 0', borderColor: '#ccc' }} />
@@ -139,7 +139,14 @@ export function AppointmentDrawer({ appointmentId, onClose, onEdit }) {
         </div>
 
         <dl className="grid grid-cols-2 gap-4">
-          <Detail label="Stylist"><span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ background: a.employeeColor }} />{a.employeeName}</span></Detail>
+          <Detail label={a.staff?.length > 1 ? 'Staff (together)' : 'Stylist'}>
+            <span className="flex flex-col gap-0.5">
+              {(a.staff?.length ? a.staff : [{ id: a.employeeId, fullName: a.employeeName, color: a.employeeColor }]).map((m) => (
+                <span key={m.id} className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ background: m.color }} />{m.fullName}</span>
+              ))}
+              {a.staff?.length > 1 ? <span className="text-xs text-muted">Commission is shared equally</span> : null}
+            </span>
+          </Detail>
           <Detail label="Branch">{a.branchName}</Detail>
           <Detail label="Booked by">{a.createdByName || '—'}</Detail>
           <Detail label="Booked on">{formatDateTime(a.createdAt)}</Detail>

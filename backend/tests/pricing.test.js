@@ -1,6 +1,6 @@
 'use strict';
 
-const { calculateTotals, applyPayments, commissionFor } = require('../src/services/pricing');
+const { calculateTotals, applyPayments, commissionFor, splitEvenly, shareServiceLine } = require('../src/services/pricing');
 const { toNumber } = require('../src/utils/money');
 
 const line = (unitPrice, quantity = 1, extra = {}) => ({ type: 'service', unitPrice, quantity, ...extra });
@@ -73,4 +73,26 @@ describe('financial calculations', () => {
     expect(n(commissionFor(13500, 12, 0))).toBe(1620);
     expect(n(commissionFor(0, 12, 0))).toBe(0);
   });
+
+  test('shares split an amount exactly, the remainder one unit at a time', () => {
+    const nums = (list) => list.map((d) => n(d));
+    expect(nums(splitEvenly(10000, 3, 0))).toEqual([3334, 3333, 3333]);
+    expect(nums(splitEvenly(10001, 2, 0))).toEqual([5001, 5000]);
+    expect(nums(splitEvenly(100.05, 2, 2))).toEqual([50.03, 50.02]);
+    expect(nums(splitEvenly(7, 1, 0))).toEqual([7]);
+    for (const [amount, parts] of [[99999, 7], [1, 3], [123457, 6]]) {
+      expect(nums(splitEvenly(amount, parts, 0)).reduce((a, b) => a + b, 0)).toBe(amount);
+    }
+  });
+
+  test('a shared service splits its commission equally, or applies each person\'s own rate', () => {
+    const withRate = shareServiceLine({ netAmount: 45000, serviceRate: 10, staff: [{ id: 1, commissionRate: 40 }, { id: 2, commissionRate: 5 }], decimals: 0 });
+    expect(withRate.shares.map((s) => [s.employeeId, n(s.revenueShare), s.rate, n(s.commission)])).toEqual([[1, 22500, 10, 2250], [2, 22500, 10, 2250]]);
+    expect(n(withRate.commission)).toBe(4500);
+    const ownRates = shareServiceLine({ netAmount: 30000, serviceRate: null, staff: [{ id: 1, commissionRate: 40 }, { id: 2, commissionRate: 20 }], decimals: 0 });
+    expect(ownRates.shares.map((s) => n(s.commission))).toEqual([6000, 3000]);
+    expect(ownRates.rate).toBe(30);
+    expect(shareServiceLine({ netAmount: 5000, serviceRate: 10, staff: [], decimals: 0 }).shares).toEqual([]);
+  });
 });
+

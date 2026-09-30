@@ -37,7 +37,7 @@ export function useAppointmentQr(id, enabled = true) {
 export function useAvailability(params, enabled) {
   return useQuery({
     queryKey: appointmentKeys.availability(params),
-    queryFn: () => http.get('/appointments/availability', { ...params, serviceIds: params.serviceIds?.join(',') }).then((r) => r.data),
+    queryFn: () => http.get('/appointments/availability', { ...params, employeeIds: params.employeeIds?.join(','), serviceIds: params.serviceIds?.join(',') }).then((r) => r.data),
     enabled,
   });
 }

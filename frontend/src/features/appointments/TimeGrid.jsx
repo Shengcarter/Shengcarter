@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, DragOverlay, PointerSensor, KeyboardSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
-import { CheckCircle2, GripVertical } from 'lucide-react';
+import { CheckCircle2, GripVertical, Users } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatTime, nowInBusinessZone } from '../../utils/format';
-import { PX_PER_MIN, STATUS_STYLES, layoutDay, minutesOfDay } from './calendarUtils';
+import { PX_PER_MIN, STATUS_STYLES, layoutDay, minutesOfDay, staffNames } from './calendarUtils';
 import { ReplyIcon } from './CustomerReply';
 
 // Narrowest readable appointment card, and the room kept for "+N" chips.
@@ -17,7 +17,10 @@ function hexToRgba(hex, alpha) {
 }
 
 function EventCard({ event, compact, dragging }) {
-  const color = event.employeeColor || '#E3166A';
+  // In a person's column the card takes their colour; a team shows a people icon.
+  const member = event.staff?.find((m) => m.id === event.columnEmployeeId);
+  const color = member?.color || event.employeeColor || '#E3166A';
+  const team = event.staff?.length > 1;
   return (
     <div
       className={cn(
@@ -29,16 +32,17 @@ function EventCard({ event, compact, dragging }) {
     >
       <p className="flex items-center gap-1 font-semibold text-fg">
         <span className="truncate">{formatTime(event.startTime)} · {event.customerName}</span>
+        {team ? <Users className="size-3 shrink-0 text-accent" aria-label={`Done together by ${staffNames(event)}`} /> : null}
         {event.checkedInAt && event.status !== 'completed' ? <CheckCircle2 className="size-3 shrink-0 text-success" aria-label="Checked in" /> : <ReplyIcon appointment={event} />}
       </p>
       {!compact ? <p className="truncate text-muted">{event.services}</p> : null}
-      {!compact ? <p className="truncate text-muted">{event.employeeName}</p> : null}
+      {!compact ? <p className="truncate text-muted">{team ? `${staffNames(event)} together` : event.employeeName}</p> : null}
     </div>
   );
 }
 
 function DraggableEvent({ event, top, height, left, width, canDrag, onClick }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `appt-${event.id}`, data: { event }, disabled: !canDrag });
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `appt-${event.slotKey || event.id}`, data: { event }, disabled: !canDrag });
   return (
     <button
       ref={setNodeRef}
@@ -47,7 +51,7 @@ function DraggableEvent({ event, top, height, left, width, canDrag, onClick }) {
       {...(canDrag ? listeners : {})}
       {...attributes}
       aria-roledescription={canDrag ? 'Draggable appointment' : 'Appointment'}
-      aria-label={`${formatTime(event.startTime)} ${event.customerName}, ${event.services}, ${event.status.replace('_', ' ')}`}
+      aria-label={`${formatTime(event.startTime)} ${event.customerName}, ${event.services}, ${staffNames(event)}, ${event.status.replace('_', ' ')}`}
       className={cn('group absolute z-10 p-0.5 focus:z-20 focus:outline-none', canDrag && 'cursor-grab active:cursor-grabbing', isDragging && 'opacity-30')}
       style={{ top, height, left, width }}
     >
@@ -123,7 +127,7 @@ function Column({ column, isFirst, events, hours, canDrag, onEventClick, onSlotC
         const lanesWidth = event.reserve ? `(100% - ${MORE_PX}px)` : '100%';
         return (
           <DraggableEvent
-            key={event.id}
+            key={event.slotKey || event.id}
             event={event}
             top={Math.max(0, start * PX_PER_MIN)}
             height={Math.max(22, duration * PX_PER_MIN)}

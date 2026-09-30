@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowDown, CalendarCheck, Gift, History, Loader2, Minus, NotebookPen, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, CalendarCheck, FileUp, Gift, History, Loader2, Minus, NotebookPen, Plus, ShoppingBag, Trash2, Users, X } from 'lucide-react';
 import { Badge, Button, ButtonLink, Card, Drawer, EmptyState, IconButton, Input, Segmented, Textarea } from '../../components/ui';
 import { http } from '../../api/client';
 import { cn } from '../../utils/cn';
@@ -25,7 +25,7 @@ function cartReducer(state, action) {
     case 'customer':
       return { ...state, customer: action.customer, loyaltyPoints: '' };
     case 'addService':
-      return { ...state, items: [...state.items, { key: nextKey(), type: 'service', serviceId: action.service.id, name: action.service.name, price: action.service.price, employeeId: action.employeeId || null, quantity: 1 }] };
+      return { ...state, items: [...state.items, { key: nextKey(), type: 'service', serviceId: action.service.id, name: action.service.name, price: action.service.price, employeeIds: action.employeeIds || [], quantity: 1 }] };
     case 'addProduct': {
       const existing = state.items.find((i) => i.type === 'product' && i.productId === action.product.id);
       if (existing) {
@@ -35,8 +35,8 @@ function cartReducer(state, action) {
     }
     case 'quantity':
       return { ...state, items: state.items.map((i) => (i.key === action.key ? { ...i, quantity: Math.max(1, Math.min(action.quantity, i.stock ?? 20)) } : i)) };
-    case 'employee':
-      return { ...state, items: state.items.map((i) => (i.key === action.key ? { ...i, employeeId: action.employeeId } : i)) };
+    case 'staff':
+      return { ...state, items: state.items.map((i) => (i.key === action.key ? { ...i, employeeIds: action.employeeIds } : i)) };
     case 'remove':
       return { ...state, items: state.items.filter((i) => i.key !== action.key) };
     case 'discount':
@@ -59,7 +59,7 @@ function toPayload(cart) {
     customerId: cart.customer?.id,
     appointmentId: cart.appointment?.id,
     items: cart.items.map((i) => (i.type === 'service'
-      ? { type: 'service', serviceId: i.serviceId, employeeId: i.employeeId || undefined, quantity: i.quantity }
+      ? { type: 'service', serviceId: i.serviceId, employeeIds: i.employeeIds, quantity: i.quantity }
       : { type: 'product', productId: i.productId, employeeId: i.employeeId || undefined, quantity: i.quantity })),
     discount: cart.discount.type === 'none' || !Number(cart.discount.value) ? { type: 'none', value: 0 } : { type: cart.discount.type, value: Number(cart.discount.value) },
     loyaltyPoints: Number(cart.loyaltyPoints) || 0,
@@ -120,9 +120,45 @@ function useCartScroll(itemCount) {
   return { listRef, hiddenBelow, onScroll, showAll: scrollToEnd };
 }
 
+/**
+ * Who performed a service: one person, or several who did it together (the
+ * commission is then shared equally). Chips for the chosen people, and a
+ * list to add someone.
+ */
+function StaffPicker({ item, employees, onChange }) {
+  const selected = item.employeeIds.map((id) => employees.find((e) => e.id === id)).filter(Boolean);
+  const options = employees.filter((e) => !item.employeeIds.includes(e.id));
+  return (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+      {selected.map((e) => (
+        <span key={e.id} className="inline-flex h-7 items-center gap-0.5 rounded-lg bg-brand-500/10 pr-0.5 pl-2 text-xs font-medium text-accent">
+          {e.fullName.split(' ')[0]}
+          <button type="button" aria-label={`Remove ${e.fullName} from ${item.name}`} onClick={() => onChange(item.employeeIds.filter((id) => id !== e.id))} className="rounded p-0.5 hover:bg-brand-500/20">
+            <X className="size-3" />
+          </button>
+        </span>
+      ))}
+      {selected.length < 6 && options.length ? (
+        <select
+          aria-label={selected.length ? `Add another person to ${item.name}` : `Staff for ${item.name}`}
+          value=""
+          onChange={(e) => {
+            const id = Number(e.target.value);
+            if (id) onChange([...item.employeeIds, id]);
+          }}
+          className={cn('h-7 min-w-24 flex-1 rounded-lg border bg-surface px-2 text-xs', selected.length ? 'border-line text-muted' : 'border-amber-500/60 text-warning')}
+        >
+          <option value="">{selected.length ? '+ Add person' : 'Who performed it?'}</option>
+          {options.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
+        </select>
+      ) : null}
+    </div>
+  );
+}
+
 function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
   const q = quote.data;
-  const missingStaff = cart.items.some((i) => i.type === 'service' && !i.employeeId);
+  const missingStaff = cart.items.some((i) => i.type === 'service' && !i.employeeIds.length);
   const loyalty = q?.loyalty;
   const { listRef, hiddenBelow, onScroll, showAll } = useCartScroll(cart.items.length);
   const itemCount = cart.items.reduce((n, i) => n + i.quantity, 0);
@@ -176,15 +212,7 @@ function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
                     <div className="mt-1.5 flex items-center gap-2">
                       <span className="shrink-0 text-xs text-muted tabular-nums">{formatMoney(item.price)}{item.type === 'product' ? ` × ${item.quantity}` : ''}</span>
                       {item.type === 'service' ? (
-                        <select
-                          aria-label={`Staff for ${item.name}`}
-                          value={item.employeeId || ''}
-                          onChange={(e) => dispatch({ type: 'employee', key: item.key, employeeId: Number(e.target.value) || null })}
-                          className={cn('h-8 min-w-0 flex-1 rounded-lg border bg-surface px-2 text-xs', item.employeeId ? 'border-line' : 'border-amber-500/60 text-warning')}
-                        >
-                          <option value="">Who performed it?</option>
-                          {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
-                        </select>
+                        <StaffPicker item={item} employees={employees} onChange={(employeeIds) => dispatch({ type: 'staff', key: item.key, employeeIds })} />
                       ) : (
                         <div className="ml-auto flex items-center rounded-lg border border-line">
                           <button type="button" className="p-1.5 text-muted hover:text-fg" onClick={() => dispatch({ type: 'quantity', key: item.key, quantity: item.quantity - 1 })} aria-label="Decrease quantity"><Minus className="size-3.5" /></button>
@@ -193,6 +221,9 @@ function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
                         </div>
                       )}
                     </div>
+                    {item.type === 'service' && item.employeeIds.length > 1 ? (
+                      <p className="mt-1 flex items-center gap-1 text-[11px] text-muted"><Users className="size-3" aria-hidden />Done together · commission shared equally between {item.employeeIds.length}</p>
+                    ) : null}
                   </li>
                 );
               })}
@@ -319,7 +350,8 @@ export default function PosPage() {
                 items: checkout.serviceIds
                   .map((sid) => services.find((s) => s.id === sid))
                   .filter(Boolean)
-                  .map((s) => ({ key: nextKey(), type: 'service', serviceId: s.id, name: s.name, price: s.price, employeeId: checkout.employeeId, quantity: 1 })),
+                  // Everyone on the appointment performed its services; the cashier can change a line.
+                  .map((s) => ({ key: nextKey(), type: 'service', serviceId: s.id, name: s.name, price: s.price, employeeIds: checkout.employeeIds || [checkout.employeeId], quantity: 1 })),
               },
             });
           }
@@ -347,9 +379,11 @@ export default function PosPage() {
 
   const inCart = useMemo(() => Object.fromEntries(cart.items.filter((i) => i.type === 'product').map((i) => [i.productId, i.quantity])), [cart.items]);
 
-  const defaultEmployee = () => {
-    const last = [...cart.items].reverse().find((i) => i.type === 'service' && i.employeeId);
-    return last?.employeeId || (employees.some((e) => e.id === ownEmployeeId) ? ownEmployeeId : null);
+  // A new service line starts with the staff of the previous one (or the signed-in stylist).
+  const defaultStaff = () => {
+    const last = [...cart.items].reverse().find((i) => i.type === 'service' && i.employeeIds.length);
+    if (last) return [...last.employeeIds];
+    return employees.some((e) => e.id === ownEmployeeId) ? [ownEmployeeId] : [];
   };
 
   const completeSale = async (payments) => {
@@ -388,16 +422,21 @@ export default function PosPage() {
     <div className="-mx-4 -mt-6 sm:-mx-6 lg:-mb-12 lg:flex lg:h-[calc(100dvh-4rem)] lg:flex-col">
       <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
         <h1 className="font-display text-2xl font-semibold">Point of sale</h1>
-        {can('sales.view') ? (
-          <ButtonLink to="/pos/sales" variant="secondary" size="sm" icon={History}>Sales history</ButtonLink>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {can('sales.import') ? (
+            <ButtonLink to="/pos/sales?import=1" variant="ghost" size="sm" icon={FileUp}>Import past sales</ButtonLink>
+          ) : null}
+          {can('sales.view') ? (
+            <ButtonLink to="/pos/sales" variant="secondary" size="sm" icon={History}>Sales history</ButtonLink>
+          ) : null}
+        </div>
       </div>
       <div className="grid lg:min-h-0 lg:flex-1 lg:grid-cols-[1fr_24rem] xl:grid-cols-[1fr_27rem]">
         <div className="min-h-[60vh] min-w-0 lg:h-full">
           <Catalog
             inCart={inCart}
             onAddService={(service) => {
-              dispatch({ type: 'addService', service, employeeId: defaultEmployee() });
+              dispatch({ type: 'addService', service, employeeIds: defaultStaff() });
               if (!isDesktop) toast.success(`${service.name} added`, { duration: 1200 });
             }}
             onAddProduct={(product) => {

@@ -5,7 +5,7 @@ const db = require('../config/database');
 const { hasPermission } = require('../middleware/auth');
 const { camelizeRows } = require('../utils/case');
 const { timezone, todayLocal, localDateRange } = require('../utils/time');
-const { salesTotals, expenseTotal, runningCostTotal, wagesEarned, bucketSql, fillSeries, money, change } = require('./reportService');
+const { salesTotals, expenseTotal, runningCostTotal, commissionEarned, bucketSql, fillSeries, money, change } = require('./reportService');
 
 /**
  * Dashboard for the signed-in user. Each section is included only when the
@@ -67,8 +67,8 @@ async function dashboard(ctx) {
       [branchId, monthRange.start, monthRange.end],
     );
     const topStaff = await db.query(
-      `SELECT e.full_name AS name, SUM(i.quantity) AS services, SUM(i.net_amount) AS revenue
-       FROM sale_items i JOIN sales s ON s.id = i.sale_id JOIN employees e ON e.id = i.employee_id
+      `SELECT e.full_name AS name, SUM(i.quantity) AS services, SUM(sis.revenue_share) AS revenue
+       FROM sale_item_staff sis JOIN sale_items i ON i.id = sis.sale_item_id JOIN sales s ON s.id = i.sale_id JOIN employees e ON e.id = sis.employee_id
        WHERE s.branch_id = ? AND s.status = 'completed' AND s.sold_at >= ? AND s.sold_at < ? AND i.item_type = 'service'
        GROUP BY e.id, e.full_name ORDER BY revenue DESC LIMIT 5`,
       [branchId, monthRange.start, monthRange.end],
@@ -89,27 +89,27 @@ async function dashboard(ctx) {
 
   if (can('reports.financial')) {
     const [from, to, lastFrom, lastTo] = [monthStart.toISODate(), today.toISODate(), lastMonthStart.toISODate(), lastMonthEnd.toISODate()];
-    const [exp, lastExp, running, lastRunning, wages, lastWages] = await Promise.all([
+    const [exp, lastExp, running, lastRunning, staffPay, lastStaffPay] = await Promise.all([
       expenseTotal(branchId, from, to),
       expenseTotal(branchId, lastFrom, lastTo),
       runningCostTotal(branchId, from, to),
       runningCostTotal(branchId, lastFrom, lastTo),
-      wagesEarned(branchId, from, to),
-      wagesEarned(branchId, lastFrom, lastTo),
+      commissionEarned(branchId, from, to),
+      commissionEarned(branchId, lastFrom, lastTo),
     ]);
     const month = result.sales?.month || (await salesTotals(branchId, monthRange.start, monthRange.end));
     const lastMonth = result.sales?.lastMonth || (await salesTotals(branchId, lastMonthRange.start, lastMonthRange.end));
     const profit = money(month.grossProfit - exp.total);
-    // Profit with wages counted as earned, so it does not jump on payday.
-    const afterWages = money(month.grossProfit - running - wages.total);
+    // Profit with staff commission counted as earned, so it does not jump on payday.
+    const afterCommission = money(month.grossProfit - running - staffPay.total);
     result.finance = {
       expenses: exp.total,
       expensesChange: change(exp.total, lastExp.total),
       netProfit: profit,
       profitChange: change(profit, lastMonth.grossProfit - lastExp.total),
-      profitAfterWages: afterWages,
-      profitAfterWagesChange: change(afterWages, lastMonth.grossProfit - lastRunning - lastWages.total),
-      wagesEarned: wages.total,
+      profitAfterCommission: afterCommission,
+      profitAfterCommissionChange: change(afterCommission, lastMonth.grossProfit - lastRunning - lastStaffPay.total),
+      commissionEarned: staffPay.total,
       runningCosts: running,
     };
   }
@@ -117,7 +117,8 @@ async function dashboard(ctx) {
   if (can('appointments.view', 'appointments.view_own')) {
     const ownOnly = !can('appointments.view');
     if (!ownOnly || ctx.user.employeeId) {
-      const scope = ownOnly ? ' AND a.employee_id = ?' : '';
+      // A stylist sees the appointments they are part of (alone or with others).
+      const scope = ownOnly ? ' AND EXISTS (SELECT 1 FROM appointment_staff ast WHERE ast.appointment_id = a.id AND ast.employee_id = ?)' : '';
       const scopeParams = ownOnly ? [ctx.user.employeeId] : [];
       const counts = await db.query(
         `SELECT a.status, COUNT(*) AS n FROM appointments a WHERE a.branch_id = ? AND a.start_time >= ? AND a.start_time < ?${scope} GROUP BY a.status`,
@@ -125,7 +126,9 @@ async function dashboard(ctx) {
       );
       const byStatus = Object.fromEntries(counts.map((c) => [c.status, Number(c.n)]));
       const upcoming = await db.query(
-        `SELECT a.id, a.code, a.start_time, a.end_time, a.status, c.full_name AS customer_name, e.full_name AS employee_name, e.calendar_color,
+        `SELECT a.id, a.code, a.start_time, a.end_time, a.status, c.full_name AS customer_name, e.calendar_color,
+                (SELECT GROUP_CONCAT(se.full_name ORDER BY ast.sort_order SEPARATOR ', ') FROM appointment_staff ast
+                 JOIN employees se ON se.id = ast.employee_id WHERE ast.appointment_id = a.id) AS employee_name,
                 (SELECT GROUP_CONCAT(x.service_name ORDER BY x.sort_order SEPARATOR ', ') FROM appointment_services x WHERE x.appointment_id = a.id) AS services
          FROM appointments a JOIN customers c ON c.id = a.customer_id JOIN employees e ON e.id = a.employee_id
          WHERE a.branch_id = ? AND a.end_time >= UTC_TIMESTAMP() AND a.status IN ('pending','confirmed','in_progress')${scope}
@@ -195,9 +198,9 @@ async function dashboard(ctx) {
   if (ctx.user.employeeId) {
     const employeeId = ctx.user.employeeId;
     const mine = await db.queryOne(
-      `SELECT SUM(i.quantity) AS services, COALESCE(SUM(i.net_amount), 0) AS revenue
-       FROM sale_items i JOIN sales s ON s.id = i.sale_id
-       WHERE i.employee_id = ? AND s.status = 'completed' AND s.sold_at >= ? AND s.sold_at < ? AND i.item_type = 'service'`,
+      `SELECT SUM(i.quantity) AS services, COALESCE(SUM(sis.revenue_share), 0) AS revenue
+       FROM sale_item_staff sis JOIN sale_items i ON i.id = sis.sale_item_id JOIN sales s ON s.id = i.sale_id
+       WHERE sis.employee_id = ? AND s.status = 'completed' AND s.sold_at >= ? AND s.sold_at < ? AND i.item_type = 'service'`,
       [employeeId, monthRange.start, monthRange.end],
     );
     const commission = await db.queryOne(

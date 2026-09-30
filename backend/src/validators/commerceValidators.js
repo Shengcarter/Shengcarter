@@ -100,8 +100,13 @@ const purchaseList = listQuery.merge(dateRangeQuery).extend({
 });
 
 // ---- Sales / POS ------------------------------------------------------------------------
+// Who performed a service: employeeIds (several people share the commission
+// equally), or a single employeeId from older clients.
+const staffIds = z.array(id).max(6, 'At most 6 people per service').refine((ids) => new Set(ids).size === ids.length, 'Each person can be chosen once');
+
 const saleItem = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('service'), serviceId: id, employeeId: z.coerce.number({ error: 'Choose who performed this service' }).int().positive('Choose who performed this service'), quantity: z.coerce.number().int().min(1).max(20).optional().default(1) }),
+  z.object({ type: z.literal('service'), serviceId: id, employeeId: optionalId, employeeIds: staffIds.optional(), quantity: z.coerce.number().int().min(1).max(20).optional().default(1) })
+    .refine((item) => item.employeeId || item.employeeIds?.length, { path: ['employeeIds'], message: 'Choose who performed this service' }),
   z.object({ type: z.literal('product'), productId: id, employeeId: optionalId, quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1').max(1000) }),
 ]);
 
@@ -109,7 +114,7 @@ const salePayment = z.object({ method: paymentMethod, amount: money, reference: 
 
 // Quotes (live POS preview) accept service lines before a stylist is chosen.
 const quoteItem = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('service'), serviceId: id, employeeId: optionalId, quantity: z.coerce.number().int().min(1).max(20).optional().default(1) }),
+  z.object({ type: z.literal('service'), serviceId: id, employeeId: optionalId, employeeIds: staffIds.optional(), quantity: z.coerce.number().int().min(1).max(20).optional().default(1) }),
   z.object({ type: z.literal('product'), productId: id, employeeId: optionalId, quantity: z.coerce.number().int().min(1).max(1000) }),
 ]);
 
@@ -150,11 +155,11 @@ const expenseList = listQuery.merge(dateRangeQuery).extend({ categoryId: optiona
 // ---- Payroll ----------------------------------------------------------------------------------
 const payroll = {
   commissionList: listQuery.merge(dateRangeQuery).extend({ employeeId: optionalId, status: z.enum(['earned', 'paid', 'reversed']).optional() }),
-  salaryList: listQuery.extend({ employeeId: optionalId, status: z.enum(['pending', 'paid']).optional(), periodStart: isoDate.optional() }),
+  payoutList: listQuery.extend({ employeeId: optionalId, status: z.enum(['pending', 'paid']).optional(), periodStart: isoDate.optional() }),
   generate: z
     .object({ periodStart: isoDate, periodEnd: isoDate, employeeIds: z.array(id).max(500).optional() })
     .refine((d) => d.periodEnd >= d.periodStart, { path: ['periodEnd'], message: 'End date must be after the start date' }),
-  update: z.object({ baseSalary: money.optional(), bonus: money.optional(), deductions: money.optional(), notes: optionalText(255) }),
+  update: z.object({ bonus: money.optional(), deductions: money.optional(), notes: optionalText(255) }),
   pay: z.object({ paymentMethod, paidDate: isoDate }),
 };
 

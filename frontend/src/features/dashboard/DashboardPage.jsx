@@ -109,7 +109,7 @@ function SalesKpis({ sales, finance }) {
         index={1}
       />
       {finance ? (
-        <StatCard label="Profit this month" icon={Coins} tone={finance.profitAfterWages < 0 ? 'danger' : 'success'} value={formatMoney(finance.profitAfterWages)} trend={finance.profitAfterWagesChange ?? undefined} caption={`After ${formatMoney(finance.wagesEarned)} wages`} index={2} />
+        <StatCard label="Profit this month" icon={Coins} tone={finance.profitAfterCommission < 0 ? 'danger' : 'success'} value={formatMoney(finance.profitAfterCommission)} trend={finance.profitAfterCommissionChange ?? undefined} caption={`After ${formatMoney(finance.commissionEarned)} staff commission`} index={2} />
       ) : (
         <StatCard label="Average sale" icon={ReceiptText} tone="purple" value={formatMoney(month.averageSale)} caption="This month" index={2} />
       )}

@@ -93,7 +93,7 @@ export default function ExpensesPage() {
     <div>
       <PageHeader
         title="Expenses"
-        description="Rent, utilities, supplies, salaries and every other cost of running the salon."
+        description="Rent, utilities, supplies, staff commission payouts and every other cost of running the salon."
         actions={can('expenses.manage') ? (
           <>
             <Button variant="secondary" icon={Layers} onClick={() => setCategoriesOpen(true)}>Categories</Button>
@@ -142,7 +142,7 @@ export default function ExpensesPage() {
           loading={expenses.isPending}
           error={expenses.error}
           onRetry={expenses.refetch}
-          onRowClick={can('expenses.manage') ? (e) => (e.salaryRecordId ? toast.info('Salary expenses are managed from Employees → Salary & commission') : setForm({ open: true, expense: e })) : undefined}
+          onRowClick={can('expenses.manage') ? (e) => (e.payoutId ? toast.info('Commission payouts are managed from Employees → Commission payouts') : setForm({ open: true, expense: e })) : undefined}
           empty={<EmptyState icon={Wallet} title="No expenses recorded" description="Record rent, bills and purchases to see true profit." action={can('expenses.manage') ? <Button icon={Plus} onClick={() => setForm({ open: true, expense: null })}>Record expense</Button> : null} />}
           columns={[
             { key: 'expenseDate', header: 'Date', render: (e) => formatDate(e.expenseDate) },
@@ -155,7 +155,7 @@ export default function ExpensesPage() {
               key: 'actions',
               header: <span className="sr-only">Actions</span>,
               align: 'right',
-              render: (e) => (can('expenses.manage') && !e.salaryRecordId ? (
+              render: (e) => (can('expenses.manage') && !e.payoutId ? (
                 <button type="button" className="rounded-lg p-1.5 text-muted hover:bg-red-500/10 hover:text-danger" onClick={(ev) => { ev.stopPropagation(); setDeleting(e); }} aria-label="Delete expense"><Trash2 className="size-4" /></button>
               ) : null),
             },

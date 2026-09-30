@@ -22,7 +22,7 @@ How the code base is organised, the rules every module follows, and where to mak
 └──────────────┬──────────────────────────────────────────────────────────────────┘
                │ mysql2 pool · UTC session time zone · prepared statements
 ┌──────────────▼──────────────┐     ┌────────────────────────────────────────────┐
-│ MySQL 8 · 41 tables · InnoDB │     │ Optional providers: SMTP · Africa's Talking │
+│ MySQL 8 · 43 tables · InnoDB │     │ Optional providers: SMTP · Africa's Talking │
 │ FKs, indexes, CHECKs         │     │ · Twilio · WhatsApp Cloud API · Claude API  │
 └──────────────────────────────┘     └────────────────────────────────────────────┘
 ```
@@ -104,7 +104,7 @@ All amounts are `DECIMAL(14,2)` in MySQL and calculated with **decimal.js** (`ut
 The database session time zone is UTC and every `DATETIME` is stored in UTC. The business time zone (Settings, default `Africa/Dar_es_Salaam`) is applied with luxon when interpreting user input (e.g. "today", a booking at 14:00) and in SQL with `CONVERT_TZ(column, '+00:00', <validated offset>)` when grouping reports by local day. The browser formats with the same business time zone, not the device's.
 
 ### Transactions and locking
-`db.withTransaction(async (conn) => { … })` wraps every multi-step write — a sale (lines, payments, stock movements, loyalty, appointment status, audit), a refund, receiving a purchase, payroll payment, stock counts. Any error rolls everything back. Deadlocks and lock-wait timeouts are retried automatically (three attempts).
+`db.withTransaction(async (conn) => { … })` wraps every multi-step write — a sale (lines, payments, stock movements, loyalty, appointment status, audit), a refund, receiving a purchase, a commission payout, stock counts. Any error rolls everything back. Deadlocks and lock-wait timeouts are retried automatically (three attempts).
 
 Race conditions are prevented with row locks inside the transaction:
 
@@ -176,7 +176,9 @@ To add a permission: insert it in `database/seed.sql` (and a migration for exist
 
 `reportService` returns JSON for each report (sales, customers, services, staff, inventory, expenses, profit & loss, branches) with the period, comparison with the previous period and a table. `exportService` renders the same data to CSV (UTF-8 BOM, formula-injection protection), Excel (ExcelJS with number formats) and PDF (PDFKit with business header and page numbers). Exports require `reports.export` and are audited.
 
-Profit & loss is on a cash basis: net sales − cost of goods sold (purchase price at the time of sale) − expenses (including salaries paid). Because salaries are paid once a month, cash profit jumps on payday, so the P&L and the dashboard also show **profit after wages**: gross profit − running costs (every expense except salary payments made through Payroll) − wages earned in the period (`wagesEarned`: salaries for the days worked, from the salary record covering each day or else the monthly salary spread over that month's days, plus commission earned). Once every salary for a period has been paid, the two figures are equal. The expense insights compare running costs and wages the same way, so they are not distorted by paydays.
+Profit & loss is on a cash basis: net sales − cost of goods sold (purchase price at the time of sale) − expenses (including commission paid out). Staff are paid by commission only; because commission is paid out once a period, cash profit jumps on payday, so the P&L and the dashboard also show **profit after commission**: gross profit − running costs (every expense except commission payouts) − commission earned in the period (`commissionEarned`: commission when earned, refunds excluded, plus payout bonuses minus deductions spread over each payout's days). Once all commission for a period has been paid out, the two figures are equal. The expense insights compare running costs and commission the same way, so they are not distorted by paydays.
+
+**Several staff on one job.** `appointment_staff` holds an appointment's team (the first is also `appointments.employee_id`); conflicts, availability and working hours are checked for every member, and the calendar shows the appointment in each member's column. `sale_item_staff` holds who performed each sale line with their equal share of its value and commission (`pricing.shareServiceLine`, with `splitEvenly` giving the rounding remainder one unit at a time so shares always add up); `commissions` has one row per person per line. Staff reports, the dashboard and employee performance read the shares, so staff figures add up to the salon's total.
 
 ---
 

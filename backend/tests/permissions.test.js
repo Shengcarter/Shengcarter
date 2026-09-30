@@ -25,7 +25,7 @@ describe('role permissions', () => {
     }
   });
 
-  test('stylist only receives appointments assigned to them', async () => {
+  test('stylist only receives appointments they are part of', async () => {
     const me = (await stylist.get('/auth/me')).body.data.user;
     expect(me.employeeId).toBeTruthy();
     // One booking for the stylist and one for a colleague.
@@ -35,21 +35,27 @@ describe('role permissions', () => {
       [me.employeeId],
     );
     const customer = (await admin.post('/customers', { fullName: 'Scope Check', phone: uniquePhone() })).body.data.id;
+    const booked = [];
     for (const [employeeId, serviceId] of [[me.employeeId, mine.service_id], [other.employee_id, other.service_id]]) {
       const day = await nextWorkingDay(employeeId, 20);
       const res = await admin.post('/appointments', { customerId: customer, employeeId, serviceIds: [serviceId], startTime: `${day.date}T${day.start}` });
       expect(res.status).toBe(201);
+      booked.push(res.body.data.id);
     }
 
     const list = await stylist.get('/appointments?limit=100');
     expect(list.status).toBe(200);
     expect(list.body.data.length).toBeGreaterThan(0);
-    expect([...new Set(list.body.data.map((a) => a.employeeId))]).toEqual([me.employeeId]);
+    // Their own bookings and the ones they help with; never a colleague's alone.
+    expect(list.body.data.every((a) => a.staff.some((m) => m.id === me.employeeId))).toBe(true);
+    expect(list.body.data.map((a) => a.id)).toContain(booked[0]);
+    expect(list.body.data.map((a) => a.id)).not.toContain(booked[1]);
+    expect((await stylist.get(`/appointments/${booked[1]}`)).status).toBe(404);
   });
 
   test('receptionist runs the front desk but cannot see finances or settings', async () => {
     for (const url of ['/customers', '/appointments?limit=1', '/sales']) expect((await receptionist.get(url)).status).toBe(200);
-    for (const url of ['/expenses', '/reports/profit', '/settings', '/payroll/salaries', '/backups']) expect((await receptionist.get(url)).status).toBe(403);
+    for (const url of ['/expenses', '/reports/profit', '/settings', '/payroll/payouts', '/backups']) expect((await receptionist.get(url)).status).toBe(403);
   });
 
   test('accountant sees financial reports but cannot manage users, roles or backups', async () => {

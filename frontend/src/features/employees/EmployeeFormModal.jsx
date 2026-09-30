@@ -5,7 +5,6 @@ import { z } from 'zod';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, Input, Modal, Select, Switch, Textarea, applyServerErrors } from '../../components/ui';
-import { getFormatSettings } from '../../utils/format';
 import { employeeApi, employeeKeys } from './api';
 
 const COLORS = ['#E3166A', '#60A5FA', '#F472B6', '#34D399', '#A78BFA', '#FB923C', '#F87171', '#22D3EE', '#94A3B8'];
@@ -17,7 +16,6 @@ const schema = z.object({
   email: z.union([z.literal(''), z.string().trim().email('Enter a valid email')]),
   address: z.string().max(255).optional(),
   employmentDate: z.string().optional(),
-  salary: z.coerce.number().min(0, 'Must be zero or more'),
   commissionRate: z.coerce.number().min(0, '0–100').max(100, '0–100'),
   status: z.enum(['active', 'on_leave', 'inactive', 'terminated']),
   isBookable: z.boolean(),
@@ -39,8 +37,7 @@ export function EmployeeFormModal({ open, onClose, employee, onSaved }) {
       email: employee?.email || '',
       address: employee?.address || '',
       employmentDate: employee?.employmentDate || new Date().toISOString().slice(0, 10),
-      salary: employee?.salary ?? 0,
-      commissionRate: employee?.commissionRate ?? 10,
+      commissionRate: employee?.commissionRate ?? 40,
       status: employee?.status || 'active',
       isBookable: employee ? employee.isBookable : true,
       calendarColor: employee?.calendarColor || COLORS[0],
@@ -61,7 +58,6 @@ export function EmployeeFormModal({ open, onClose, employee, onSaved }) {
     }
   });
 
-  const currency = getFormatSettings().currency;
 
   return (
     <Modal
@@ -93,8 +89,7 @@ export function EmployeeFormModal({ open, onClose, employee, onSaved }) {
           ]}
           {...register('status')}
         />
-        <Input label={`Monthly salary (${currency})`} type="number" min="0" step="any" error={errors.salary?.message} {...register('salary')} />
-        <Input label="Commission rate (%)" type="number" min="0" max="100" step="0.5" hint="Applied to services unless the service sets its own rate" error={errors.commissionRate?.message} {...register('commissionRate')} />
+        <Input label="Commission rate (%)" type="number" min="0" max="100" step="0.5" hint="Staff are paid by commission. Used for services without their own rate; a shared service is split equally." error={errors.commissionRate?.message} {...register('commissionRate')} />
         <Input label="Address" className="sm:col-span-2" error={errors.address?.message} {...register('address')} />
         <Controller
           control={control}
