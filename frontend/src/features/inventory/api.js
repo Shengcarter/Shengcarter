@@ -47,4 +47,5 @@ export const MOVEMENT_LABELS = {
   stock_out: 'Stock out',
   damage: 'Damaged / expired',
   internal_use: 'Salon use',
+  service_use: 'Used on a service',
 };

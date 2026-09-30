@@ -51,7 +51,7 @@ Other auth endpoints: `GET /auth/me`, `POST /auth/change-password`, `POST /auth/
 
 Each endpoint requires one of the permissions listed. Roles are editable in Settings → Roles & permissions.
 
-`dashboard.view` · `customers.view|create|update|delete|import` · `appointments.view|view_own|create|update|cancel|complete|checkin` · `services.view|manage` · `employees.view|manage` · `attendance.view|manage|self` · `leave.manage` · `payroll.manage` · `pos.create` · `pos.refund` · `sales.view|import` · `inventory.view|manage` · `suppliers.view|manage` · `purchases.view|manage` · `expenses.view|manage` · `loyalty.manage` · `reports.view` · `reports.financial` · `reports.export` · `insights.view` · `notifications.send` · `settings.manage` · `users.manage` · `roles.manage` · `branches.manage` · `audit.view` · `backups.manage`
+`dashboard.view` · `customers.view|create|update|delete|import` · `appointments.view|view_own|create|update|cancel|complete|checkin|record_products` · `services.view|manage` · `employees.view|manage` · `attendance.view|manage|self` · `leave.manage` · `payroll.manage` · `pos.create` · `pos.refund` · `sales.view|import|correct` · `inventory.view|manage` · `suppliers.view|manage` · `purchases.view|manage` · `expenses.view|manage` · `loyalty.manage` · `reports.view` · `reports.financial` · `reports.export` · `insights.view` · `notifications.send` · `settings.manage` · `users.manage` · `roles.manage` · `branches.manage` · `audit.view` · `backups.manage`
 
 ## Endpoints
 
@@ -72,7 +72,7 @@ Replies are matched to the appointment the customer answered (or their next one)
 | Method | Path | Permission |
 | --- | --- | --- |
 | GET | `/dashboard` | `dashboard.view` (sections depend on the role) |
-| GET | `/reports/:type?from&to&groupBy` | `reports.view` for `sales`, `customers`, `services`, `staff`, `inventory`; `reports.financial` for `expenses`, `profit`; `reports.financial` + `branches.manage` for `branches` |
+| GET | `/reports/:type?from&to&groupBy` | `reports.view` for `sales`, `customers`, `services`, `staff`, `inventory`; `reports.financial` for `expenses`, `profit`, `costing`; `reports.financial` + `branches.manage` for `branches` |
 | GET | `/reports/:type/export?format=pdf\|xlsx\|csv&from&to&groupBy` | as above + `reports.export` |
 | GET | `/insights?from&to&refresh` | `insights.view` |
 
@@ -106,6 +106,8 @@ Phone numbers are normalised to international format (`0712 345 678` → `+25571
 | POST | `/appointments/:id/status` `{ status, reason? }` | `appointments.update` / `cancel` / `complete` per status |
 | POST | `/appointments/check-in` `{ token }` · `/appointments/:id/check-in` | `appointments.checkin` |
 | GET | `/appointments/:id/qr` | view (PNG data URL) |
+| GET | `/appointments/:id/products` — products used per service: `source` `recorded` (by the stylist), `recipe` (the usual amounts) or `none` | view |
+| PUT | `/appointments/:id/products` `{ services: [{ serviceId, products: [{ productId, quantity }] }] }` — until the appointment is billed; stylists only on their own | `appointments.record_products` |
 
 An appointment can have up to 6 staff (`staff: [{ id, fullName, color }]` in responses; the first is the lead and `employeeId`). The server rejects double bookings (any member, or the same customer), bookings outside any member's working hours or on approved leave, past times, and services nobody in the team performs. Concurrent bookings for the same slot are serialised with row locks. Stylists see every appointment they are part of.
 
@@ -114,7 +116,7 @@ An appointment can have up to 6 staff (`staff: [{ id, fullName, color }]` in res
 | Method | Path | Permission |
 | --- | --- | --- |
 | GET / POST / PATCH / DELETE | `/service-categories[/:id]` | read: `services.view`; write: `services.manage` |
-| GET / POST / PATCH / DELETE | `/services[/:id]` | read: `services.view`; write: `services.manage` |
+| GET / POST / PATCH / DELETE | `/services[/:id]` `{ …, price, maxPrice?, recipe?: [{ productId, quantity }] }` — `maxPrice` for a price range chosen at checkout; `recipe` = products normally used, in this branch | read: `services.view`; write: `services.manage` |
 | GET | `/employees`, `/employees/options`, `/employees/:id` | `employees.view` (options also for booking) |
 | POST / PATCH / DELETE | `/employees[/:id]`, `/employees/:id/photo` | `employees.manage` |
 | PUT | `/employees/:id/schedule`, `/employees/:id/services` | `employees.manage` |
@@ -144,6 +146,8 @@ Staff are paid by commission only; employees have no salary field.
 | GET | `/sales/appointment/:id` | `pos.create` — cart for an appointment |
 | POST | `/sales/:id/payments` `{ method, amount, reference? }` | `pos.create` — settle a balance |
 | POST | `/sales/:id/refund` `{ reason }` | `pos.refund` |
+| PATCH | `/sales/:id/items/:itemId/costing` `{ price?, employeeIds?, consumption?: [{ productId, quantity, unitCost? }], reason }` — correct a completed service | `sales.correct` |
+| POST | `/sales/:id/items/:itemId/costing/review` `{ note }` — mark a zero or negative margin service as reviewed | `sales.correct` |
 | GET | `/payments` | `sales.view` |
 
 Sale body:
@@ -153,7 +157,8 @@ Sale body:
   "customerId": 12,
   "appointmentId": 40,
   "items": [
-    { "type": "service", "serviceId": 3, "employeeIds": [2, 5] },
+    { "type": "service", "serviceId": 3, "employeeIds": [2, 5],
+      "consumption": [{ "productId": 21, "quantity": 2 }, { "productId": 22, "quantity": 100 }] },
     { "type": "product", "productId": 7, "quantity": 2 }
   ],
   "discount": { "type": "percentage", "value": 10 },
@@ -168,7 +173,23 @@ Sale body:
 
 Prices, discounts, tax (none by default: `financial.tax_mode` is `none`), loyalty value, change and balance are always calculated by the server from the database; any totals sent by the client are ignored. The whole sale (items, stock, commissions, payments, loyalty points, customer statistics, invoice number) is saved in one database transaction.
 
-A service line lists who performed it in `employeeIds` (1–6 people; `employeeId` is still accepted). The line's value and commission are shared equally between them, to the smallest currency unit: with the service's own commission rate the commission is split equally; without one, each person earns their own rate on their equal share. Sale details return `items[].staff: [{ id, fullName, revenueShare, commissionAmount }]`; `/sales/appointment/:id` returns the appointment's `employeeIds` for checkout.
+A service line lists who performed it in `employeeIds` (1–6 people; `employeeId` is still accepted) and the products **actually used** in `consumption`, each in the product's usage unit (e.g. packs, or ml of a product stocked in bottles). For a service with a recipe, `consumption` is required (send `[]` when nothing was used); a service priced by range takes `price` between its price and `maxPrice`.
+
+For every service line the server works out, in this order and never otherwise:
+
+```
+price charged (after discounts)
+− product cost        (quantity used × the product's recorded purchase cost per unit)
+= amount after products
+− operations          (financial.operations_percentage, default 30 %)
+= distributable amount
+→ staff pool          (financial.staff_pool_percentage of it, default 50 %), shared equally between the staff
+→ salon profit        (the rest: financial.salon_profit_percentage, default 50 %)
+```
+
+Example: 50,000 with 2 packs × 5,000 and 100 ml × 20 → products 12,000, operations 11,400, staff 13,300, salon profit 13,300 (12,000 + 11,400 + 13,300 + 13,300 = 50,000). Amounts are rounded to the currency precision (whole shillings) and always add up to the price. When products cost as much as or more than the price, operations and staff get 0 (never a negative amount), a loss shows as negative salon profit, and the service is flagged `zero`/`negative` for review. The products used come out of stock (`service_use` in the ledger) in the same transaction, and the breakdown is saved with the percentages used, so later changes to prices, costs or rules never alter it.
+
+Sale details return `items[].staff: [{ id, fullName, revenueShare, commissionAmount }]`, `items[].productsUsed`, and — for `reports.financial` or `sales.correct` — `items[].costing` (the full breakdown, review status and correction history). `/sales/appointment/:id` returns the appointment's `employeeIds` and `usage` (products per service) for checkout. The quote returns each service's `productsUsed`, `marginStatus` and, for the same people, `split`.
 
 ### Imports (Excel / CSV)
 
@@ -187,7 +208,8 @@ Files are `.xlsx` or `.csv` (comma, semicolon or tab separated), up to 5,000 row
 
 | Method | Path | Permission |
 | --- | --- | --- |
-| GET / POST / PATCH / DELETE | `/products[/:id]` (`stock=low\|out\|attention\|in`) | read: `inventory.view`; write: `inventory.manage` |
+| GET / POST / PATCH / DELETE | `/products[/:id]` (`stock=low\|out\|attention\|in`) — `unit`, and optionally `usageUnit` + `usagePerUnit` ("bottle, used by the ml, 500 per bottle") | read: `inventory.view`; write: `inventory.manage` |
+| GET | `/products/usable` — active products in their usage unit, with stock (and cost per unit for people who see costs) | `inventory.view`, `pos.create`, `appointments.record_products` or `services.manage` |
 | GET / POST / PATCH / DELETE | `/product-categories[/:id]` | read: `inventory.view`; write: `inventory.manage` |
 | POST | `/inventory/adjust` `{ productId, type, quantity, unitCost?, reason }` | `inventory.manage` |
 | GET | `/inventory/transactions`, `/inventory/valuation` | `inventory.view` |
@@ -196,7 +218,7 @@ Files are `.xlsx` or `.csv` (comma, semicolon or tab separated), up to 5,000 row
 | POST | `/purchases/:id/receive`, `/purchases/:id/cancel` | `purchases.manage` |
 | POST | `/purchases/:id/payments` | `suppliers.manage` or `purchases.manage` |
 
-Adjustment types: `stock_in`, `stock_out`, `adjustment` (counted quantity), `damage`, `internal_use`. Stock can never go below zero; every change is written to the stock ledger.
+Adjustment types: `stock_in`, `stock_out`, `adjustment` (counted quantity), `damage`, `internal_use`. Quantities may have up to 3 decimals (0.2 of a bottle). Stock can never go below zero; every change is written to the stock ledger.
 
 ### Expenses
 

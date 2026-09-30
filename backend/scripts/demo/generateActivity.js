@@ -120,12 +120,40 @@ async function loadReference(branchId) {
     e.services = links.filter((l) => l.employee_id === e.id).map((l) => services.find((s) => s.id === l.service_id)).filter(Boolean);
   }
   const products = await db.query(
-    "SELECT id, name, is_retail, quantity, min_stock, max_stock, supplier_id, purchase_price, selling_price, unit FROM products WHERE branch_id = ? AND is_demo = 1 AND status = 'active'",
+    `SELECT id, name, is_retail, quantity, min_stock, max_stock, supplier_id, purchase_price, selling_price, unit, usage_unit, usage_per_unit
+     FROM products WHERE branch_id = ? AND is_demo = 1 AND status = 'active'`,
+    [branchId],
+  );
+  // What each service normally uses (database/demo-costing.sql).
+  const recipes = await db.query(
+    'SELECT sp.service_id, sp.product_id, sp.quantity FROM service_products sp JOIN products p ON p.id = sp.product_id WHERE p.branch_id = ?',
     [branchId],
   );
   const suppliers = await db.query('SELECT id, name FROM suppliers WHERE is_demo = 1 AND is_active = 1');
   const categories = Object.fromEntries((await db.query('SELECT id, slug FROM expense_categories')).map((c) => [c.slug, c.id]));
-  return { employees, services, products, suppliers, categories };
+  return { employees, services, products, suppliers, categories, recipes };
+}
+
+/**
+ * The products actually used on one service: the recipe, a little more or
+ * less each time (as in real life), skipping anything out of stock.
+ * Packs go in halves; ml and grams in fives.
+ */
+function productsUsed(serviceId, ref, reserved) {
+  const used = [];
+  for (const r of ref.recipes.filter((x) => x.service_id === serviceId)) {
+    const product = ref.products.find((p) => p.id === r.product_id);
+    if (!product) continue;
+    const per = Number(product.usage_per_unit || 1);
+    const step = product.usage_per_unit ? 5 : 0.5;
+    const quantity = Math.max(step, roundTo(Number(r.quantity) * (0.85 + rand() * 0.4), step));
+    const stockNeeded = quantity / per;
+    const alreadyNeeded = reserved.get(product.id) || 0;
+    if (product.quantity - alreadyNeeded < stockNeeded) continue;
+    reserved.set(product.id, alreadyNeeded + stockNeeded);
+    used.push({ productId: product.id, quantity });
+  }
+  return used;
 }
 
 async function createCustomers(branchId, adminId, periodStart, today, timeline) {
@@ -367,6 +395,11 @@ async function sell({ items, customerId, appointmentId, soldAt, ctx, products, r
     const product = products.find((p) => p.id === item.productId);
     product.quantity -= item.quantity;
   }
+  // Products used on services came out of stock too (rounded to 3 decimals like the server).
+  for (const used of items.flatMap((i) => i.consumption || [])) {
+    const product = products.find((p) => p.id === used.productId);
+    product.quantity = Math.round((product.quantity - used.quantity / Number(product.usage_per_unit || 1)) * 1000) / 1000;
+  }
   timeline.stats.sales += 1;
   return sale;
 }
@@ -414,7 +447,8 @@ async function restock(date, at, products, suppliers, ctx, timeline) {
 }
 
 async function useSalonStock(at, products, ctx) {
-  const supplies = products.filter((p) => !p.is_retail && p.quantity > 0);
+  // Products measured by the ml or gram are recorded on each service instead.
+  const supplies = products.filter((p) => !p.is_retail && !p.usage_unit && p.quantity > 0);
   if (!supplies.length || !chance(0.3)) return;
   const product = pick(supplies);
   await db.withTransaction((conn) =>
@@ -571,8 +605,13 @@ module.exports = async function generateActivity() {
         events.push({
           at: soldAt,
           run: async () => {
-            const items = booking.services.map((sv) => ({ type: 'service', serviceId: sv.id, employeeId: booking.employee.id, quantity: 1 }));
+            const reserved = new Map();
+            const items = booking.services.map((sv) => ({
+              type: 'service', serviceId: sv.id, employeeId: booking.employee.id, quantity: 1, consumption: productsUsed(sv.id, ref, reserved),
+            }));
             if (chance(0.2)) addRetail(items, ref.products);
+            // A product used on the service is not also sold on the same bill (keeps demo stock simple).
+            for (let i = items.length - 1; i >= 0; i -= 1) if (items[i].type === 'product' && reserved.has(items[i].productId)) items.splice(i, 1);
             const sale = await sell({
               items, customerId: booking.customer.id, appointmentId: booking.appointmentId, soldAt, ctx: cashierCtx(),
               products: ref.products, recent: today.diff(date, 'days').days <= 21, timeline,

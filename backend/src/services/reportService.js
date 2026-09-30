@@ -827,6 +827,121 @@ async function profit(params, ctx) {
   };
 }
 
+// ---- Service costing -----------------------------------------------------------------------------
+
+/** Totals of the money split of services sold (refunded sales excluded). */
+async function costingTotals(branchId, start, end) {
+  const row = await db.queryOne(
+    `SELECT COUNT(*) AS services, COALESCE(SUM(f.price), 0) AS sales, COALESCE(SUM(f.product_cost), 0) AS product_cost,
+            COALESCE(SUM(f.operations_amount), 0) AS operations, COALESCE(SUM(f.staff_pool), 0) AS staff, COALESCE(SUM(f.salon_profit), 0) AS profit,
+            COALESCE(SUM(f.margin_status = 'zero'), 0) AS zero, COALESCE(SUM(f.margin_status = 'negative'), 0) AS negative,
+            COALESCE(SUM(f.review_status = 'pending'), 0) AS pending
+     FROM sale_item_finance f JOIN sales s ON s.id = f.sale_id
+     WHERE f.branch_id = ? AND s.status = 'completed' AND f.performed_at >= ? AND f.performed_at < ?`,
+    [branchId, start, end],
+  );
+  const services = Number(row.services);
+  return {
+    services,
+    sales: money(row.sales),
+    productCost: money(row.product_cost),
+    operations: money(row.operations),
+    staffEarnings: money(row.staff),
+    salonProfit: money(row.profit),
+    averageServiceValue: services ? money(row.sales / services) : 0,
+    averageProfit: services ? money(row.profit / services) : 0,
+    flagged: { zero: Number(row.zero), negative: Number(row.negative), pending: Number(row.pending) },
+  };
+}
+
+/**
+ * Service costing: for every service sold, price − products used → operations
+ * → staff pool / salon profit. By period (day, week or month), stylist,
+ * service and product, with the services that need a manager's review.
+ */
+async function costing(params, ctx) {
+  const period = resolvePeriod(params);
+  const branchId = ctx.branchId;
+  const scope = `FROM sale_item_finance f JOIN sales s ON s.id = f.sale_id
+                 WHERE f.branch_id = ? AND s.status = 'completed' AND f.performed_at >= ? AND f.performed_at < ?`;
+  const args = [branchId, period.start, period.end];
+
+  const [current, previous, running, seriesRows, staffRows, serviceRows, productRows, flaggedRows] = await Promise.all([
+    costingTotals(branchId, period.start, period.end),
+    costingTotals(branchId, period.previous.start, period.previous.end),
+    runningCostTotal(branchId, period.from, period.to),
+    db.query(
+      `SELECT ${bucketSql('f.performed_at', period.groupBy)} AS bucket, COUNT(*) AS services, SUM(f.price) AS sales, SUM(f.product_cost) AS productCost,
+              SUM(f.operations_amount) AS operations, SUM(f.staff_pool) AS staffEarnings, SUM(f.salon_profit) AS salonProfit
+       ${scope} GROUP BY bucket`,
+      args,
+    ),
+    // Each person's part of a shared service: their revenue share, an equal share of its products, their pay.
+    db.query(
+      `SELECT e.id, e.full_name AS name, COUNT(*) AS services, SUM(f.staff_count > 1) AS shared, SUM(sis.revenue_share) AS revenue,
+              SUM(f.product_cost / f.staff_count) AS productCost, SUM(sis.commission_amount) AS earnings
+       FROM sale_item_staff sis JOIN employees e ON e.id = sis.employee_id JOIN sale_item_finance f ON f.sale_item_id = sis.sale_item_id
+       JOIN sales s ON s.id = f.sale_id
+       WHERE f.branch_id = ? AND s.status = 'completed' AND f.performed_at >= ? AND f.performed_at < ?
+       GROUP BY e.id, e.full_name ORDER BY earnings DESC, name`,
+      args,
+    ),
+    db.query(
+      `SELECT f.service_id AS id, f.service_name AS name, COUNT(*) AS count, SUM(f.price) AS revenue, SUM(f.product_cost) AS productCost,
+              SUM(f.operations_amount) AS operations, SUM(f.staff_pool) AS staffEarnings, SUM(f.salon_profit) AS salonProfit
+       ${scope} GROUP BY f.service_id, f.service_name ORDER BY salonProfit DESC, name`,
+      args,
+    ),
+    db.query(
+      `SELECT u.product_id AS id, MAX(u.product_name) AS name, u.unit, SUM(u.quantity) AS quantity, SUM(u.total_cost) AS cost,
+              COUNT(DISTINCT u.sale_item_id) AS timesUsed, GROUP_CONCAT(DISTINCT f.service_name ORDER BY f.service_name SEPARATOR ', ') AS services
+       FROM sale_item_products u JOIN sale_item_finance f ON f.sale_item_id = u.sale_item_id JOIN sales s ON s.id = f.sale_id
+       WHERE f.branch_id = ? AND s.status = 'completed' AND f.performed_at >= ? AND f.performed_at < ?
+       GROUP BY u.product_id, u.unit ORDER BY cost DESC, name`,
+      args,
+    ),
+    db.query(
+      `SELECT f.sale_item_id AS itemId, s.id AS saleId, s.invoice_number AS invoiceNumber, f.service_name AS service, f.price, f.product_cost AS productCost,
+              f.salon_profit AS salonProfit, f.margin_status AS marginStatus, f.review_status AS reviewStatus, f.review_note AS reviewNote, f.performed_at AS performedAt
+       ${scope} AND f.margin_status <> 'positive' ORDER BY f.review_status = 'pending' DESC, f.performed_at DESC LIMIT 200`,
+      args,
+    ),
+  ]);
+
+  const series = fillSeries(period, seriesRows, {
+    services: 'number', sales: 'money', productCost: 'money', operations: 'money', staffEarnings: 'money', salonProfit: 'money',
+  });
+  return {
+    period,
+    summary: {
+      ...current,
+      staffShare: pct(current.staffEarnings, current.sales),
+      profitMargin: pct(current.salonProfit, current.sales),
+      // The operations allocation is meant to cover the running costs actually recorded.
+      runningCosts: running,
+      operationsCoverage: money(current.operations - running),
+      change: {
+        sales: change(current.sales, previous.sales),
+        staffEarnings: change(current.staffEarnings, previous.staffEarnings),
+        salonProfit: change(current.salonProfit, previous.salonProfit),
+      },
+    },
+    series,
+    staff: staffRows.map((r) => ({
+      id: r.id, name: r.name, services: Number(r.services), shared: Number(r.shared), revenue: money(r.revenue), productCost: money(r.productCost),
+      earnings: money(r.earnings), averageEarnings: Number(r.services) ? money(r.earnings / r.services) : 0,
+    })),
+    services: serviceRows.map((r) => ({
+      id: r.id, name: r.name, count: Number(r.count), revenue: money(r.revenue), productCost: money(r.productCost), operations: money(r.operations),
+      staffEarnings: money(r.staffEarnings), salonProfit: money(r.salonProfit), averageProfit: money(r.salonProfit / r.count), margin: pct(r.salonProfit, r.revenue),
+    })),
+    products: productRows.map((r) => ({
+      id: r.id, name: r.name, unit: r.unit, quantity: toNumber(r.quantity, 3), cost: money(r.cost), timesUsed: Number(r.timesUsed), services: r.services || '',
+    })),
+    flagged: flaggedRows.map((r) => ({ ...r, price: money(r.price), productCost: money(r.productCost), salonProfit: money(r.salonProfit) })),
+  };
+}
+
 // ---- Branch comparison --------------------------------------------------------------------------
 
 async function branches(params) {
@@ -868,7 +983,8 @@ const REPORTS = {
   inventory: { permission: 'reports.view', build: inventory, title: 'Inventory report' },
   expenses: { permission: 'reports.financial', build: expenses, title: 'Expense report' },
   profit: { permission: 'reports.financial', build: profit, title: 'Profit & loss statement' },
+  costing: { permission: 'reports.financial', build: costing, title: 'Service costing report' },
   branches: { permission: ['reports.financial', 'branches.manage'], all: true, build: branches, title: 'Branch comparison' },
 };
 
-module.exports = { REPORTS, resolvePeriod, salesTotals, expenseTotal, runningCostTotal, commissionEarned, bucketSql, local, fillSeries, money, pct, change };
+module.exports = { REPORTS, resolvePeriod, salesTotals, expenseTotal, runningCostTotal, commissionEarned, costingTotals, bucketSql, local, fillSeries, money, pct, change };

@@ -340,7 +340,7 @@ describe('WhatsApp confirmations, replies and thank-you messages', () => {
       `SELECT s.id, s.price, es.employee_id FROM services s JOIN employee_services es ON es.service_id = s.id
        JOIN employees e ON e.id = es.employee_id WHERE s.is_active = 1 AND e.status = 'active' LIMIT 1`,
     );
-    const items = [{ type: 'service', serviceId: pick.id, employeeId: pick.employee_id }];
+    const items = [{ type: 'service', serviceId: pick.id, employeeId: pick.employee_id, consumption: [] }];
 
     const paidNow = await customer('Zawadi Paid');
     const sale = (await admin.post('/sales', { customerId: paidNow.id, items, payments: [{ method: 'cash', amount: Number(pick.price) }] })).body.data;

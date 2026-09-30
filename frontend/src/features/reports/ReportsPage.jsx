@@ -10,6 +10,7 @@ import { PRESETS, presetRange } from './periods';
 import { CustomersReport, SalesReport, ServicesReport, StaffReport } from './SalesReports';
 import { BranchesReport, ExpensesReport, InventoryReport, ProfitReport } from './FinanceReports';
 import { InsightsPanel } from './InsightsPanel';
+import { CostingReport } from './CostingReport';
 
 const TABS = [
   { value: 'insights', label: 'Insights', permission: 'insights.view', component: InsightsPanel },
@@ -20,6 +21,7 @@ const TABS = [
   { value: 'inventory', label: 'Inventory', permission: 'reports.view', component: InventoryReport },
   { value: 'expenses', label: 'Expenses', permission: 'reports.financial', component: ExpensesReport },
   { value: 'profit', label: 'Profit & loss', permission: 'reports.financial', component: ProfitReport },
+  { value: 'costing', label: 'Service costing', permission: 'reports.financial', component: CostingReport },
   { value: 'branches', label: 'Branches', permission: ['reports.financial', 'branches.manage'], all: true, component: BranchesReport },
 ];
 

@@ -2,6 +2,7 @@
 
 const { sendSuccess, sendCreated, sendPaginated } = require('../utils/response');
 const salesService = require('../services/salesService');
+const serviceFinance = require('../services/serviceFinanceService');
 const documentService = require('../services/documentService');
 
 async function create(req, res) {
@@ -30,6 +31,18 @@ async function refund(req, res) {
   sendSuccess(res, await salesService.refundSale(req.params.id, req.body, req.ctx), 'Sale refunded');
 }
 
+/** Correct a completed service's products used, price or staff (recalculated, with an audit trail). */
+async function correctService(req, res) {
+  await serviceFinance.correct(req.params.id, req.params.itemId, req.body, req.ctx);
+  sendSuccess(res, await salesService.getById(req.params.id, req.ctx), 'Service corrected and recalculated');
+}
+
+/** Mark a zero or negative margin service as reviewed. */
+async function reviewService(req, res) {
+  await serviceFinance.review(req.params.id, req.params.itemId, req.body, req.ctx);
+  sendSuccess(res, await salesService.getById(req.params.id, req.ctx), 'Marked as reviewed');
+}
+
 /** PDF invoice (A4) or receipt (80 mm thermal). */
 async function document(req, res) {
   const sale = await salesService.getById(req.params.id, req.ctx);
@@ -50,4 +63,4 @@ async function payments(req, res) {
   sendPaginated(res, await salesService.listPayments(req.validQuery, req.ctx));
 }
 
-module.exports = { create, quote, list, get, recordPayment, refund, document, appointmentCheckout, payments };
+module.exports = { create, quote, list, get, recordPayment, refund, correctService, reviewService, document, appointmentCheckout, payments };

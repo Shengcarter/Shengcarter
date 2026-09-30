@@ -25,5 +25,7 @@ router.patch('/:id/reschedule', requirePermission('appointments.update'), valida
 router.post('/:id/status', requirePermission('appointments.update', 'appointments.cancel', 'appointments.complete'), validate({ params: idParam, body: v.status }), c.changeStatus);
 router.post('/:id/check-in', requirePermission('appointments.checkin'), validate({ params: idParam }), c.checkIn);
 router.get('/:id/qr', view, validate({ params: idParam }), c.qr);
+router.get('/:id/products', view, validate({ params: idParam }), c.products);
+router.put('/:id/products', requirePermission('appointments.record_products'), validate({ params: idParam, body: v.productsUsed }), c.recordProducts);
 
 module.exports = router;

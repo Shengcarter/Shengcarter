@@ -38,10 +38,10 @@ Main threats considered: a staff member using more rights than their role allows
 - "Remember me" sessions last `REFRESH_TOKEN_DAYS` (30); others `SESSION_HOURS` (12).
 
 ### Authorization
-- 46 permissions in 13 modules, grouped into editable roles. Every API route declares the permissions it needs (`requirePermission`); the web app hiding a button is a convenience, not the protection.
+- 48 permissions in 13 modules, grouped into editable roles. Every API route declares the permissions it needs (`requirePermission`); the web app hiding a button is a convenience, not the protection.
 - Record-level rules in the services: stylists see only their own appointments (and, on their dashboard, their own services and commission); users work only in their own branch unless they have `branches.manage` — sales, appointments, expenses and stock of another branch answer *not found*. The customer list is shared by all branches, so a customer can visit any of them.
 - Guard rails: the last active Super Admin cannot be deactivated or demoted; users cannot deactivate themselves; the Super Admin role keeps all permissions.
-- Financial reports (`reports.financial`), exports (`reports.export`), refunds (`pos.refund`), backups (`backups.manage`), settings and user management are separate permissions.
+- Financial reports (`reports.financial`), exports (`reports.export`), refunds (`pos.refund`), corrections to completed services (`sales.correct`), backups (`backups.manage`), settings (including the service money split) and user management are separate permissions. Stylists can record the products they used (`appointments.record_products`) but cannot change prices, product costs, recipes, the split or completed sales; cost figures are only returned to people with `reports.financial` or `sales.correct`.
 
 ### Input handling
 - Every request body, query and route parameter is validated with **Zod** schemas; unknown fields are dropped; lengths, formats, ranges and enumerations are enforced; invalid input gets a `422` with per-field messages.

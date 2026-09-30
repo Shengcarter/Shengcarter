@@ -13,6 +13,7 @@ import { usePermission } from '../../hooks';
 import { appointmentApi, appointmentKeys, useAppointment, useAppointmentQr } from './api';
 import { EDITABLE_STATUSES, localDateOf, staffNames } from './calendarUtils';
 import { ReplyBadge, ReplyNote } from './CustomerReply';
+import { AppointmentProducts } from '../costing/AppointmentProducts';
 
 /** Printable appointment slip (A4 or thermal). */
 function AppointmentSlip({ appointment, qr }) {
@@ -138,13 +139,15 @@ export function AppointmentDrawer({ appointmentId, onClose, onEdit }) {
           </ul>
         </div>
 
+        <AppointmentProducts appointment={a} canRecord={can('appointments.record_products')} />
+
         <dl className="grid grid-cols-2 gap-4">
           <Detail label={a.staff?.length > 1 ? 'Staff (together)' : 'Stylist'}>
             <span className="flex flex-col gap-0.5">
               {(a.staff?.length ? a.staff : [{ id: a.employeeId, fullName: a.employeeName, color: a.employeeColor }]).map((m) => (
                 <span key={m.id} className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ background: m.color }} />{m.fullName}</span>
               ))}
-              {a.staff?.length > 1 ? <span className="text-xs text-muted">Commission is shared equally</span> : null}
+              {a.staff?.length > 1 ? <span className="text-xs text-muted">Their share of the service is split equally</span> : null}
             </span>
           </Detail>
           <Detail label="Branch">{a.branchName}</Detail>

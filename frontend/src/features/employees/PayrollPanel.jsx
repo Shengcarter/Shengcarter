@@ -124,7 +124,7 @@ export function PayrollPanel({ employee }) {
         <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
           <div>
             <h2 className="font-semibold">Commission payouts</h2>
-            <p className="text-xs text-muted">Staff are paid the commission they earn; there is no fixed salary.</p>
+            <p className="text-xs text-muted">Staff are paid their share of the services they do (after products and operations); there is no fixed salary.</p>
           </div>
           <Button size="sm" icon={CalendarRange} onClick={() => setGenerating(true)}>Prepare payouts</Button>
         </div>
@@ -187,7 +187,7 @@ export function PayrollPanel({ employee }) {
           loading={commissions.isPending}
           error={commissions.error}
           onRetry={commissions.refetch}
-          empty={<EmptyState title="No commissions yet" description="Commissions are created automatically for services sold at the POS." />}
+          empty={<EmptyState title="No commissions yet" description="Each service sold at the POS gives the staff who did it their share of what is left after products and operations." />}
           columns={[
             { key: 'earnedAt', header: 'Date', render: (c) => formatDateTime(c.earnedAt) },
             ...(employeeId ? [] : [{ key: 'employeeName', header: 'Employee', primary: true }]),

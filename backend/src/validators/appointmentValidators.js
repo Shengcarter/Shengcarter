@@ -19,7 +19,19 @@ const idsQuery = z.preprocess(
   z.array(z.coerce.number().int().positive()).max(10).optional(),
 );
 
+// Products used on an appointment's services, in each product's usage unit.
+const usedQuantity = z.coerce.number().positive('Quantity must be more than 0').max(100_000)
+  .refine((v) => Math.abs(v * 1000 - Math.round(v * 1000)) < 1e-6, 'Use at most 3 decimal places');
+const productsUsed = z.object({
+  services: z.array(z.object({
+    serviceId: id,
+    products: z.array(z.object({ productId: id, quantity: usedQuantity })).max(30)
+      .refine((rows) => new Set(rows.map((r) => r.productId)).size === rows.length, 'List each product once'),
+  })).min(1).max(10),
+});
+
 module.exports = {
+  productsUsed,
   create: z.object({
     customerId: id,
     employeeId: id.optional(),

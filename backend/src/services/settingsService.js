@@ -57,6 +57,12 @@ const SETTINGS = {
   'financial.receipt_footer': { schema: text(300), public: true },
   'financial.receipt_format': { schema: z.enum(['thermal', 'a4']), public: true },
   'financial.allow_partial_payments': { schema: z.boolean(), public: true },
+  // Service money split: price − products used → operations % → staff % / salon profit %.
+  // Public so every screen can explain it; only settings.manage can change it.
+  'financial.operations_percentage': { schema: z.number().min(0).max(100), public: true },
+  'financial.staff_pool_percentage': { schema: z.number().min(0).max(100), public: true },
+  'financial.salon_profit_percentage': { schema: z.number().min(0).max(100), public: true },
+  'financial.staff_split_rule': { schema: z.enum(['equal']), public: true },
 
   // System
   'system.timezone': {
@@ -285,6 +291,22 @@ async function writeValue(key, value, userId, conn) {
   );
 }
 
+/** Rules that involve several settings of a group, checked against the values after the update. */
+function crossChecks(group, updates) {
+  if (group !== 'financial') return [];
+  const next = (key) => {
+    const update = updates.find(([k]) => k === `financial.${key}`);
+    return Number(update ? update[1] : get(`financial.${key}`));
+  };
+  const staff = next('staff_pool_percentage');
+  const profit = next('salon_profit_percentage');
+  // Compare in hundredths so 33.33 + 66.67 is exactly 100.
+  if (Math.round(staff * 100) + Math.round(profit * 100) !== 10000) {
+    return [{ field: 'staff_pool_percentage', message: `Staff and salon profit must add up to 100% of what is left after operations (now ${staff + profit}%)` }];
+  }
+  return [];
+}
+
 /**
  * Validate and save a group of settings. For secret keys: omit to keep the
  * current value, send null or '' to clear it, send a string to replace it.
@@ -315,6 +337,7 @@ async function updateGroup(group, values, ctx) {
       updates.push([key, parsed.data]);
     }
   }
+  if (!errors.length) errors.push(...crossChecks(group, updates));
   if (errors.length) throw ApiError.validation(errors);
 
   await db.withTransaction(async (conn) => {

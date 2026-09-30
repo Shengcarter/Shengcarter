@@ -21,7 +21,7 @@ const { connect, runSqlFile } = require('./lib/db');
 const DEMO_USERS = [
   { role: 'receptionist', name: 'Zawadi Mollel', email: 'receptionist.demo@zolastylish.local', employeeCode: 'EMP-0007' },
   { role: 'stylist', name: 'Neema Mwakyusa', email: 'stylist.demo@zolastylish.local', employeeCode: 'EMP-0001' },
-  { role: 'accountant', name: 'Baraka Mushi', email: 'accountant.demo@zolastylish.local', employeeCode: null },
+  { role: 'accountant', name: 'Imani Kweka', email: 'accountant.demo@zolastylish.local', employeeCode: null },
 ];
 
 function checkPassword(value, variable) {
@@ -67,6 +67,8 @@ async function seedDemo(conn) {
   } else {
     console.log('• Demo data already loaded — skipped.');
   }
+  // Products used on services and the demo recipes (safe to run on every setup).
+  await runSqlFile(conn, path.join(config.paths.database, 'demo-costing.sql'));
 
   const demoPassword = process.env.DEMO_PASSWORD || '';
   checkPassword(demoPassword, 'DEMO_PASSWORD');

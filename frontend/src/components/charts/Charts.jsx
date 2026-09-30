@@ -125,6 +125,45 @@ export function ColumnChart({ data, xKey, yKey, label, formatValue, formatX, hei
 }
 
 /**
+ * Parts of a whole per period, stacked (e.g. where each week's service money
+ * went). series: [{ key, label }] in a fixed entity order, colours by position;
+ * a 2px surface gap separates the parts; a part below zero (a loss) sits under
+ * the baseline. Legend always shown for ≥ 2 series.
+ */
+export function StackedColumnChart({ data, xKey, series, formatValue, formatX, height = '100%' }) {
+  const theme = useChartTheme();
+  const colored = series.map((s, i) => ({ ...s, color: s.color || theme.series[i % theme.series.length] }));
+  return (
+    <div className="flex h-full flex-col">
+      <Legend series={colored} />
+      <div className="min-h-0 flex-1">
+        <ResponsiveContainer width="100%" height={height}>
+          <BarChart data={data} stackOffset="sign" margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barCategoryGap="25%">
+            <CartesianGrid vertical={false} stroke={theme.grid} />
+            <XAxis dataKey={xKey} {...axisProps(theme)} tickFormatter={formatX} minTickGap={12} />
+            <YAxis {...axisProps(theme)} axisLine={false} width={64} tickFormatter={(v) => (formatValue ? formatValue(v, 'axis') : v)} />
+            <Tooltip cursor={{ fill: theme.grid, opacity: 0.5 }} content={<TooltipContent formatValue={formatValue} formatLabel={formatX} />} />
+            {colored.map((s, i) => (
+              <Bar
+                key={s.key}
+                dataKey={s.key}
+                name={s.label}
+                stackId="parts"
+                fill={s.color}
+                stroke={theme.surface}
+                strokeWidth={2}
+                maxBarSize={28}
+                radius={i === colored.length - 1 ? [4, 4, 0, 0] : 0}
+              />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Ranked horizontal bars (compare magnitude across nominal categories).
  * One series → one color; value label at the bar tip.
  */

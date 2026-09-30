@@ -7,16 +7,17 @@ const settings = require('../src/services/settingsService');
 /**
  * Several staff members on one appointment or service. Every member's time is
  * blocked, each sees the appointment, and at the POS the service's value and
- * commission are shared equally between the people who performed it.
+ * its staff pool (price − products → 30% operations → 50% to staff) are
+ * shared equally between the people who performed it.
  */
 describe('appointments and services done by several staff', () => {
   let admin;
   let customerId;
-  let A; // Tumaini: 40 % commission, does braids and wash
-  let B; // Upendo: 20 %, does braids and wash
-  let C; // Wema: 10 %, does neither
-  let braids; // 10,001 with its own 30 % rate
-  let wash; // 30,000 with no rate of its own
+  let A; // Tumaini: does braids and wash
+  let B; // Upendo: does braids and wash
+  let C; // Wema: does neither
+  let braids; // 10,001: 3,000 operations, 3,501 staff pool, 3,500 salon profit
+  let wash; // 30,000: 9,000 operations, 10,500 staff pool, 10,500 salon profit
   let day;
   const at = (minutesAfterOpening) => {
     const [h, m] = day.start.split(':').map(Number);
@@ -120,36 +121,38 @@ describe('appointments and services done by several staff', () => {
     expect(res.status).toBe(201);
     sharedSaleId = res.body.data.id;
     const [line] = res.body.data.items;
-    expect(line.commissionAmount).toBe(3000); // 30 % of 10,001, rounded to the shilling
+    // 10,001 → 3,000 operations → 7,001 → staff pool 3,501 (half, rounded) → 1,751 + 1,750
+    expect(line.commissionAmount).toBe(3501);
     expect(line.employeeId).toBe(A);
     expect(line.staff).toEqual([
-      { id: A, fullName: 'Tumaini Teamwork', revenueShare: 5001, commissionAmount: 1500 },
-      { id: B, fullName: 'Upendo Teamwork', revenueShare: 5000, commissionAmount: 1500 },
+      { id: A, fullName: 'Tumaini Teamwork', revenueShare: 5001, commissionAmount: 1751 },
+      { id: B, fullName: 'Upendo Teamwork', revenueShare: 5000, commissionAmount: 1750 },
     ]);
+    // base = each person's half of the 7,001 left after operations; rate = the staff pool %.
     const commissions = await db.query('SELECT employee_id, base_amount, rate, amount FROM commissions WHERE sale_id = ? ORDER BY employee_id', [sharedSaleId]);
-    expect(commissions.map((c) => [c.employee_id, Number(c.base_amount), Number(c.rate), Number(c.amount)])).toEqual([[A, 5001, 30, 1500], [B, 5000, 30, 1500]]);
+    expect(commissions.map((c) => [c.employee_id, Number(c.base_amount), Number(c.rate), Number(c.amount)])).toEqual([[A, 3501, 50, 1751], [B, 3500, 50, 1750]]);
   });
 
-  test('without a service rate, each person earns their own rate on an equal share', async () => {
+  test('everyone gets an equal share of the staff pool, whatever their old commission %', async () => {
     const res = await admin.post('/sales', { items: [{ type: 'service', serviceId: wash, employeeIds: [A, B] }], payments: [{ method: 'cash', amount: 30000 }] });
     const [line] = res.body.data.items;
-    expect(line.staff.map((m) => [m.id, m.revenueShare, m.commissionAmount])).toEqual([[A, 15000, 6000], [B, 15000, 3000]]);
-    expect(line.commissionAmount).toBe(9000);
-    expect(line.commissionRate).toBe(30); // effective rate for the line
+    expect(line.staff.map((m) => [m.id, m.revenueShare, m.commissionAmount])).toEqual([[A, 15000, 5250], [B, 15000, 5250]]);
+    expect(line.commissionAmount).toBe(10500);
+    expect(line.commissionRate).toBe(35); // staff share of the price
   });
 
   test('three people: shares still add up exactly', async () => {
     const res = await admin.post('/sales', { items: [{ type: 'service', serviceId: braids, employeeIds: [A, B, C] }], payments: [{ method: 'cash', amount: 10001 }] });
     const [line] = res.body.data.items;
     expect(line.staff.map((m) => m.revenueShare)).toEqual([3334, 3334, 3333]);
-    expect(line.staff.map((m) => m.commissionAmount)).toEqual([1000, 1000, 1000]);
+    expect(line.staff.map((m) => m.commissionAmount)).toEqual([1167, 1167, 1167]); // 3,501 ÷ 3
     expect(line.staff.reduce((s, m) => s + m.revenueShare, 0)).toBe(10001);
   });
 
   test('older clients sending one employeeId still work, and a line needs someone', async () => {
     const single = await admin.post('/sales', { items: [{ type: 'service', serviceId: wash, employeeId: B }], payments: [{ method: 'cash', amount: 30000 }] });
     expect(single.status).toBe(201);
-    expect(single.body.data.items[0].staff.map((m) => [m.id, m.commissionAmount])).toEqual([[B, 6000]]);
+    expect(single.body.data.items[0].staff.map((m) => [m.id, m.commissionAmount])).toEqual([[B, 10500]]);
     const nobody = await admin.post('/sales', { items: [{ type: 'service', serviceId: wash, employeeIds: [] }], payments: [{ method: 'cash', amount: 30000 }] });
     expect(nobody.status).toBe(422);
   });
@@ -160,10 +163,10 @@ describe('appointments and services done by several staff', () => {
     const a = await perf(A);
     expect(a.servicesCompleted).toBe(3);
     expect(a.revenue).toBe(5001 + 15000 + 3334);
-    expect(a.commissionEarned).toBe(1500 + 6000 + 1000);
+    expect(a.commissionEarned).toBe(1751 + 5250 + 1167);
     const c = await perf(C);
     expect(c.revenue).toBe(3333);
-    expect(c.commissionEarned).toBe(1000);
+    expect(c.commissionEarned).toBe(1167);
 
     const report = (await admin.get(`/reports/staff?from=${today}&to=${today}`)).body.data;
     const row = (id) => report.staff.find((r) => r.id === id);

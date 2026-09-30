@@ -204,6 +204,80 @@ function AppointmentsToday({ appointments, className }) {
   );
 }
 
+function MiniList({ title, rows, render }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">{title}</p>
+      {rows.length ? (
+        <ol className="space-y-1.5">
+          {rows.map((r, i) => (
+            <li key={`${r.name}-${i}`} className="flex items-center justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate"><span className="mr-1.5 text-xs text-muted tabular-nums">{i + 1}.</span>{r.name}</span>
+              <span className="shrink-0 text-right tabular-nums">{render(r)}</span>
+            </li>
+          ))}
+        </ol>
+      ) : <p className="text-sm text-muted">Nothing yet this month</p>}
+    </div>
+  );
+}
+
+/**
+ * This month's services: what customers paid, split into products used,
+ * operations, staff earnings and salon profit, with the best services,
+ * stylists and the products used most.
+ */
+function ServiceMoney({ costing }) {
+  const navigate = useNavigate();
+  const c = costing;
+  const figure = (label, value, note, tone) => (
+    <div className="min-w-0">
+      <p className="text-xs text-muted">{label}</p>
+      <p className={cn('text-lg font-semibold tabular-nums', tone)}>{formatMoney(value)}</p>
+      {note ? <p className="text-xs text-muted">{note}</p> : null}
+    </div>
+  );
+  return (
+    <Card className="mb-6 p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Service money this month</h2>
+          <p className="text-xs text-muted">Price − products used → operations → staff and salon profit, for {formatNumber(c.services)} service{c.services === 1 ? '' : 's'}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {c.flagged.pending ? <Badge tone="warning"><AlertTriangle className="size-3" aria-hidden />{c.flagged.pending} low-margin to review</Badge> : null}
+          <Button size="sm" variant="ghost" onClick={() => navigate('/reports?tab=costing')}>Full report</Button>
+        </div>
+      </div>
+      <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        {figure('Service sales', c.sales, `average ${formatMoney(c.averageServiceValue)}`)}
+        {figure('Products used', c.productCost, 'costs')}
+        {figure('Operations', c.operations, 'costs')}
+        {figure('Staff earnings', c.staffEarnings, 'paid to staff')}
+        {figure('Salon profit', c.salonProfit, `${formatMoney(c.averageProfit)} per service`, c.salonProfit < 0 ? 'text-danger' : 'text-success')}
+      </div>
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <div>
+          {c.sales > 0 && c.salonProfit >= 0 ? (
+            <ShareBar
+              formatValue={formatMoney}
+              segments={[
+                { key: 'productCost', label: 'Products used', value: c.productCost },
+                { key: 'operations', label: 'Operations', value: c.operations },
+                { key: 'staffEarnings', label: 'Staff', value: c.staffEarnings },
+                { key: 'salonProfit', label: 'Salon profit', value: c.salonProfit },
+              ]}
+            />
+          ) : null}
+        </div>
+        <MiniList title="Most profitable services" rows={c.topServices} render={(r) => <>{formatMoney(r.profit)}<span className="block text-xs text-muted">{formatNumber(r.count)} × · {formatMoney(r.revenue)}</span></>} />
+        <MiniList title="Top-earning stylists" rows={c.topStaff} render={(r) => <>{formatMoney(r.earnings)}<span className="block text-xs text-muted">{formatNumber(r.services)} services</span></>} />
+        <MiniList title="Most-used products" rows={c.topProducts} render={(r) => <>{formatMoney(r.cost)}<span className="block text-xs text-muted">{formatNumber(r.quantity, { maximumFractionDigits: 3 })} {r.unit}</span></>} />
+      </div>
+    </Card>
+  );
+}
+
 function TopList({ title, rows, nameKey, empty }) {
   const data = rows.slice(0, 5);
   return (
@@ -416,6 +490,7 @@ export default function DashboardPage() {
         <>
           {d.me ? <MyDay me={d.me} /> : null}
           {d.sales ? <SalesKpis sales={d.sales} finance={d.finance} /> : null}
+          {d.serviceCosting ? <ServiceMoney costing={d.serviceCosting} /> : null}
 
           <div className="grid gap-6 xl:grid-cols-3">
             {d.sales ? <RevenueTrend trend={d.sales.trend} /> : null}

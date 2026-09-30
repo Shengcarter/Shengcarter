@@ -423,18 +423,18 @@ async function saveSales(analysis, ctx) {
       );
       for (const r of group) {
         const d = r.data;
-        // History only: no commission; the value is shared between the staff named.
+        // History only: no products used, money split or commission; the value
+        // is shared between the staff named.
         await insertLine(conn, {
           saleId: sale.insertId,
           branchId: ctx.branchId,
           at: soldAt,
           decimals,
-          withCommission: false,
           line: {
             type: d.item.type, serviceId: d.item.serviceId, productId: d.item.productId, employeeId: d.employeeIds[0] || null,
             staff: d.employeeIds.map((id) => ({ id })), description: d.item.name, quantity: d.quantity,
             unitPrice: toNumber(D(d.amount).dividedBy(d.quantity).toDecimalPlaces(2)), unitCost: d.item.cost,
-            lineTotal: D(d.amount), netAmount: D(d.amount), serviceRate: null, commissionRate: 0,
+            lineTotal: D(d.amount), netAmount: D(d.amount),
           },
         });
       }
