@@ -8,6 +8,7 @@ import { usePrint } from '../../components/print/usePrint';
 import { downloadFile } from '../../api/client';
 import { formatDateTime, formatMoney, titleCase } from '../../utils/format';
 import { usePermission, useDocumentTitle } from '../../hooks';
+import { ServiceCostingCard } from '../costing/ServiceCostingCard';
 import { A4Invoice, ThermalReceipt } from './Documents';
 import { PAYMENT_METHODS, salesApi, salesKeys, useSale } from './api';
 
@@ -60,7 +61,7 @@ function RefundForm({ sale, open, onClose }) {
   };
   return (
     <Modal open={open} onClose={onClose} size="sm" title={`Refund ${sale.invoiceNumber}?`}
-      description="Products are returned to stock, commissions reversed, loyalty points adjusted and the money recorded as refunded. This cannot be undone."
+      description="Products sold are returned to stock (products used on services stay used), staff pay reversed, loyalty points adjusted and the money recorded as refunded. This cannot be undone."
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="danger" onClick={submit} loading={busy} disabled={!reason.trim()}>Refund {formatMoney(sale.amountPaid)}</Button></>}>
       <Textarea label="Reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} data-autofocus />
     </Modal>
@@ -116,14 +117,14 @@ export default function SaleDetailPage() {
             <tbody>
               {s.items.map((item) => (
                 <tr key={item.id} className="border-b border-line/60">
-                  <td className="px-4 py-3"><p className="font-medium">{item.description}</p><p className="text-xs text-muted">{titleCase(item.itemType)}{item.commissionAmount > 0 ? ` · commission ${formatMoney(item.commissionAmount)}` : ''}</p></td>
+                  <td className="px-4 py-3"><p className="font-medium">{item.description}</p><p className="text-xs text-muted">{titleCase(item.itemType)}{item.commissionAmount > 0 ? ` · staff ${formatMoney(item.commissionAmount)}` : ''}</p></td>
                   <td className="px-4 py-3 text-muted">
                     {item.staff?.length > 1 ? (
                       <ul className="space-y-0.5">
                         {item.staff.map((m) => (
                           <li key={m.id}>
                             {m.fullName}
-                            {m.commissionAmount > 0 ? <span className="block text-xs whitespace-nowrap">commission {formatMoney(m.commissionAmount)}</span> : null}
+                            {m.commissionAmount > 0 ? <span className="block text-xs whitespace-nowrap">earns {formatMoney(m.commissionAmount)}</span> : null}
                           </li>
                         ))}
                       </ul>
@@ -179,6 +180,7 @@ export default function SaleDetailPage() {
           </Card>
         </div>
       </div>
+      <div className="mt-6"><ServiceCostingCard sale={s} /></div>
       {can('pos.create') && s.balanceDue > 0 ? <PaymentForm key={`pay-${s.balanceDue}`} sale={s} open={paying} onClose={() => setPaying(false)} /> : null}
       <RefundForm sale={s} open={refunding} onClose={() => setRefunding(false)} />
       {portal}

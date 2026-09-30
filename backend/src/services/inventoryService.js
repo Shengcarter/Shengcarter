@@ -4,7 +4,7 @@ const db = require('../config/database');
 const ApiError = require('../utils/ApiError');
 const { camelizeRow, camelizeRows } = require('../utils/case');
 const { getPaging, paginate } = require('../utils/pagination');
-const { toNumber } = require('../utils/money');
+const { D, toNumber } = require('../utils/money');
 const productModel = require('../models/productModel');
 const notificationService = require('./notificationService');
 const audit = require('./auditService');
@@ -35,7 +35,8 @@ async function changeStock(conn, { productId, branchId, change, type, unitCost =
     conn,
   );
   if (!product || product.branch_id !== branchId) throw ApiError.validation([{ field: 'productId', message: 'Product not found in this branch' }]);
-  const after = product.quantity + change;
+  // Stock can be fractional (0.2 of a bottle), so it is added up exactly, to 3 decimals.
+  const after = toNumber(D(product.quantity).plus(change), 3);
   if (after < 0) {
     throw ApiError.validation([{ field: 'quantity', message: `Not enough stock for ${product.name} (available: ${product.quantity})` }]);
   }
@@ -151,6 +152,29 @@ async function getProductDetail(id, ctx) {
   return { ...product, recentMovements: camelizeRows(movements), last30Days: { unitsSold: Number(sales.units), revenue: Number(sales.revenue) } };
 }
 
+/**
+ * Active products of the branch that can be used on services, in the unit they
+ * are used in (e.g. ml of a product stocked in bottles). The cost per unit is
+ * only for people who see costs.
+ */
+async function usableProducts(ctx) {
+  const rows = await db.query(
+    `SELECT id, name, sku, unit, usage_unit, usage_per_unit, purchase_price, quantity, is_retail FROM products
+     WHERE branch_id = ? AND status = 'active' ORDER BY is_retail, name`,
+    [ctx.branchId],
+  );
+  const { canSeeCosts, usageOf } = require('./serviceFinanceService');
+  const showCosts = canSeeCosts(ctx);
+  return rows.map((p) => {
+    const usage = usageOf(p);
+    return {
+      id: p.id, name: p.name, sku: p.sku, unit: usage.unit, stockUnit: p.unit, perStockUnit: usage.per.toNumber(),
+      inStock: toNumber(D(p.quantity).times(usage.per), 3), isRetail: Boolean(p.is_retail),
+      ...(showCosts ? { unitCost: toNumber(usage.unitCost, 4) } : {}),
+    };
+  });
+}
+
 // ---- Manual stock operations ----------------------------------------------------------
 
 const MANUAL_TYPES = {
@@ -171,7 +195,7 @@ async function adjust({ productId, type, quantity, unitCost, reason }, ctx) {
     let change;
     if (type === 'adjustment') {
       const current = await db.queryOne('SELECT quantity FROM products WHERE id = ? FOR UPDATE', [productId], conn);
-      change = quantity - current.quantity;
+      change = toNumber(D(quantity).minus(current.quantity), 3);
       if (change === 0) throw ApiError.badRequest('The counted quantity matches the current stock — nothing to adjust');
     } else {
       change = MANUAL_TYPES[type] * quantity;
@@ -306,6 +330,7 @@ async function dailyStockCheck() {
 }
 
 module.exports = {
+  usableProducts,
   changeStock,
   alertLowStock,
   list: productModel.list,

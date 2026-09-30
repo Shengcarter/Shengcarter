@@ -17,6 +17,7 @@ import { EmployeeFormModal } from './EmployeeFormModal';
 import { ScheduleEditor } from './ScheduleEditor';
 import { LeavePanel } from './LeavePanel';
 import { PayrollPanel } from './PayrollPanel';
+import { useSplitRules } from '../costing/rules';
 
 const RANGES = [
   { value: 'month', label: 'This month' },
@@ -173,6 +174,7 @@ function ServicesPanel({ employee, canEdit }) {
 }
 
 export default function EmployeeProfilePage() {
+  const rules = useSplitRules();
   const { id } = useParams();
   const navigate = useNavigate();
   const can = usePermission();
@@ -251,7 +253,7 @@ export default function EmployeeProfilePage() {
           </div>
         </div>
         <dl className="grid grid-cols-2 gap-4 sm:w-64">
-          <Detail label="Paid by">Commission, {e.commissionRate}%</Detail>
+          <Detail label="Paid by">Share of each service: {rules.staffOfMargin}% of what is left after products</Detail>
           <Detail label="Since">{formatDate(e.employmentDate)}</Detail>
           <Detail label="Login">{e.userEmail ? e.userRole : 'None'}</Detail>
         </dl>

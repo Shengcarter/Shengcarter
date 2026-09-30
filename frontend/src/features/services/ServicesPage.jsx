@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Clock, Layers, Plus, Scissors } from 'lucide-react';
+import { Clock, Layers, Package, Plus, Scissors } from 'lucide-react';
 import { Avatar, Badge, Button, Card, EmptyState, ErrorState, PageHeader, SearchInput, SkeletonRows } from '../../components/ui';
 import { formatDuration, formatMoney } from '../../utils/format';
 import { usePermission, useDocumentTitle } from '../../hooks';
@@ -53,7 +53,7 @@ export default function ServicesPage() {
     <div>
       <PageHeader
         title="Services"
-        description="Your salon menu — prices, durations, commissions and who performs each service."
+        description="Your salon menu — prices, durations, the products each service uses and who performs it."
         actions={
           manage ? (
             <>
@@ -119,11 +119,21 @@ export default function ServicesPage() {
                         <p className="font-medium text-fg">{s.name}</p>
                         {s.description ? <p className="mt-0.5 line-clamp-2 text-sm text-muted">{s.description}</p> : null}
                       </div>
-                      <p className="shrink-0 text-base font-semibold text-accent">{formatMoney(s.price)}</p>
+                      <p className="shrink-0 text-right text-base font-semibold text-accent">
+                        {formatMoney(s.price)}
+                        {s.maxPrice ? <span className="block text-xs font-normal text-muted">up to {formatMoney(s.maxPrice)}</span> : null}
+                      </p>
                     </div>
                     <div className="mt-4 flex flex-wrap items-center gap-2">
                       <Badge><Clock className="size-3" aria-hidden />{formatDuration(s.durationMinutes)}</Badge>
-                      {s.commissionRate !== null ? <Badge tone="brand">{s.commissionRate}% commission</Badge> : null}
+                      {s.recipe?.length ? (
+                        <span title={s.recipe.map((r) => `${r.quantity} ${r.unit} ${r.name}`).join(', ')}>
+                          <Badge tone="brand">
+                            <Package className="size-3" aria-hidden />{s.recipe.length} product{s.recipe.length === 1 ? '' : 's'}
+                            {s.expectedProductCost !== undefined ? ` · ${formatMoney(s.expectedProductCost)}` : ''}
+                          </Badge>
+                        </span>
+                      ) : null}
                       {!s.isActive ? <Badge tone="danger">Inactive</Badge> : null}
                       <div className="ml-auto flex -space-x-2">
                         {s.employees.slice(0, 4).map((e) => <Avatar key={e.id} name={e.fullName} size="xs" className="ring-2 ring-surface" />)}

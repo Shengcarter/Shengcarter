@@ -118,11 +118,6 @@ function applyPayments({ total, payments, decimals = 2 }) {
   };
 }
 
-/** Commission on a line's net amount (after discounts, before tax). */
-function commissionFor(netAmount, rate, decimals = 2) {
-  return round(D(netAmount).times(D(rate || 0)).dividedBy(100), decimals);
-}
-
 /**
  * Split an amount into `parts` equal shares in the currency's smallest unit.
  * The shares always add up to the rounded amount: any remainder goes one unit
@@ -143,32 +138,4 @@ function splitEvenly(amount, parts, decimals = 2) {
   });
 }
 
-/**
- * Share a service line between the staff who performed it. The line's value
- * is split equally; so is its commission:
- *   • the service has its own rate → commission = net × rate, split equally;
- *   • otherwise each person earns their own rate on their equal share.
- * staff: [{ id, commissionRate }] in display order (the first is the lead).
- * Returns { shares: [{ employeeId, revenueShare, rate, commission }], commission, rate }
- * where `rate` is the line's effective rate.
- */
-function shareServiceLine({ netAmount, serviceRate, staff, decimals = 2 }) {
-  if (!staff.length) return { shares: [], commission: D(0), rate: Number(serviceRate || 0) };
-  const revenue = splitEvenly(netAmount, staff.length, decimals);
-  const hasServiceRate = serviceRate !== null && serviceRate !== undefined;
-  const commissions = hasServiceRate
-    ? splitEvenly(commissionFor(netAmount, serviceRate, decimals), staff.length, decimals)
-    : staff.map((person, i) => commissionFor(revenue[i], person.commissionRate, decimals));
-  const shares = staff.map((person, i) => ({
-    employeeId: person.id,
-    revenueShare: revenue[i],
-    rate: Number(hasServiceRate ? serviceRate : person.commissionRate || 0),
-    commission: commissions[i],
-  }));
-  const commission = commissions.reduce((sum, c) => sum.plus(c), D(0));
-  const rates = [...new Set(shares.map((s) => s.rate))];
-  const rate = rates.length === 1 ? rates[0] : D(netAmount).greaterThan(0) ? round(commission.times(100).dividedBy(netAmount), 2).toNumber() : 0;
-  return { shares, commission, rate };
-}
-
-module.exports = { calculateTotals, applyPayments, commissionFor, splitEvenly, shareServiceLine };
+module.exports = { calculateTotals, applyPayments, splitEvenly };

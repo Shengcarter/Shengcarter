@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, Input, Modal, Select, Switch, Textarea, applyServerErrors } from '../../components/ui';
 import { employeeApi, employeeKeys } from './api';
+import { useSplitRules } from '../costing/rules';
 
 const COLORS = ['#E3166A', '#60A5FA', '#F472B6', '#34D399', '#A78BFA', '#FB923C', '#F87171', '#22D3EE', '#94A3B8'];
 
@@ -16,12 +17,22 @@ const schema = z.object({
   email: z.union([z.literal(''), z.string().trim().email('Enter a valid email')]),
   address: z.string().max(255).optional(),
   employmentDate: z.string().optional(),
-  commissionRate: z.coerce.number().min(0, '0–100').max(100, '0–100'),
   status: z.enum(['active', 'on_leave', 'inactive', 'terminated']),
   isBookable: z.boolean(),
   calendarColor: z.string(),
   notes: z.string().max(2000).optional(),
 });
+
+/** How staff are paid: their share of every service they do (Settings → Financial). */
+function PayRule() {
+  const rules = useSplitRules();
+  return (
+    <div className="rounded-xl border border-line bg-surface-2/40 px-3 py-2 text-xs text-muted">
+      <p className="font-medium text-fg">Paid from each service they do</p>
+      <p>After the products used, {rules.operations}% goes to operations; staff get {rules.staff}% of the rest ({rules.staffOfMargin}% of what is left after products), shared equally when several people do a service.</p>
+    </div>
+  );
+}
 
 export function EmployeeFormModal({ open, onClose, employee, onSaved }) {
   const isEdit = Boolean(employee);
@@ -37,7 +48,6 @@ export function EmployeeFormModal({ open, onClose, employee, onSaved }) {
       email: employee?.email || '',
       address: employee?.address || '',
       employmentDate: employee?.employmentDate || new Date().toISOString().slice(0, 10),
-      commissionRate: employee?.commissionRate ?? 40,
       status: employee?.status || 'active',
       isBookable: employee ? employee.isBookable : true,
       calendarColor: employee?.calendarColor || COLORS[0],
@@ -89,7 +99,7 @@ export function EmployeeFormModal({ open, onClose, employee, onSaved }) {
           ]}
           {...register('status')}
         />
-        <Input label="Commission rate (%)" type="number" min="0" max="100" step="0.5" hint="Staff are paid by commission. Used for services without their own rate; a shared service is split equally." error={errors.commissionRate?.message} {...register('commissionRate')} />
+        <PayRule />
         <Input label="Address" className="sm:col-span-2" error={errors.address?.message} {...register('address')} />
         <Controller
           control={control}

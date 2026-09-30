@@ -6,7 +6,7 @@ const { getPaging, getSort, paginate } = require('../utils/pagination');
 const { contains, startsWith } = require('../utils/sql');
 
 /** Data access for products (stock is per branch: each row belongs to one branch). */
-const COLUMNS = `p.id, p.branch_id, p.category_id, p.supplier_id, p.name, p.sku, p.barcode, p.description, p.unit,
+const COLUMNS = `p.id, p.branch_id, p.category_id, p.supplier_id, p.name, p.sku, p.barcode, p.description, p.unit, p.usage_unit, p.usage_per_unit,
   p.purchase_price, p.selling_price, p.quantity, p.min_stock, p.max_stock, p.expiry_date, p.status, p.is_retail,
   p.image, p.is_demo, p.created_at, p.updated_at, c.name AS category_name, s.name AS supplier_name,
   (p.quantity <= p.min_stock) AS is_low_stock`;
@@ -78,6 +78,8 @@ const WRITABLE = {
   barcode: 'barcode',
   description: 'description',
   unit: 'unit',
+  usageUnit: 'usage_unit',
+  usagePerUnit: 'usage_per_unit',
   purchasePrice: 'purchase_price',
   sellingPrice: 'selling_price',
   minStock: 'min_stock',
@@ -118,8 +120,9 @@ async function update(id, data, conn) {
 async function historyCount(id) {
   const row = await db.queryOne(
     `SELECT (SELECT COUNT(*) FROM sale_items WHERE product_id = ?) + (SELECT COUNT(*) FROM purchase_items WHERE product_id = ?)
-          + (SELECT COUNT(*) FROM inventory_transactions WHERE product_id = ? AND type <> 'opening') AS total`,
-    [id, id, id],
+          + (SELECT COUNT(*) FROM inventory_transactions WHERE product_id = ? AND type <> 'opening')
+          + (SELECT COUNT(*) FROM sale_item_products WHERE product_id = ?) AS total`,
+    [id, id, id, id],
   );
   return Number(row.total);
 }

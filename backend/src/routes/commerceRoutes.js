@@ -30,6 +30,10 @@ const invManage = requirePermission('inventory.manage');
 productRouter.get('/', invView, validate({ query: v.productList }), async (req, res) => {
   sendPaginated(res, await inventoryService.list({ ...req.validQuery, branchId: req.ctx.branchId }));
 });
+// Products that can be recorded as used on a service (by the till, stylists and whoever edits recipes).
+productRouter.get('/usable', requirePermission('inventory.view', 'pos.create', 'appointments.record_products', 'services.manage'), async (req, res) => {
+  sendSuccess(res, await inventoryService.usableProducts(req.ctx));
+});
 productRouter.post('/', invManage, validate({ body: v.productBody }), async (req, res) => {
   sendCreated(res, await inventoryService.createProduct(req.body, req.ctx), 'Product created successfully');
 });
@@ -127,6 +131,8 @@ saleRouter.get(
 );
 saleRouter.post('/:id/payments', requirePermission('pos.create'), validate({ params: idParam, body: v.salePayment.extend({ amount: v.salePayment.shape.amount.refine((n) => n > 0, 'Amount must be greater than zero') }) }), sales.recordPayment);
 saleRouter.post('/:id/refund', requirePermission('pos.refund'), validate({ params: idParam, body: v.refund }), sales.refund);
+saleRouter.patch('/:id/items/:itemId/costing', requirePermission('sales.correct'), validate({ params: v.saleItemParams, body: v.serviceCorrection }), sales.correctService);
+saleRouter.post('/:id/items/:itemId/costing/review', requirePermission('sales.correct'), validate({ params: v.saleItemParams, body: v.serviceReview }), sales.reviewService);
 
 const paymentRouter = Router();
 paymentRouter.get('/', requirePermission('sales.view'), validate({ query: v.paymentList }), sales.payments);

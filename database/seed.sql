@@ -46,6 +46,7 @@ INSERT INTO permissions (code, module, description) VALUES
   ('appointments.cancel',      'appointments',  'Cancel appointments'),
   ('appointments.complete',    'appointments',  'Start and complete services'),
   ('appointments.checkin',     'appointments',  'Check customers in (QR verification)'),
+  ('appointments.record_products', 'appointments', 'Record the products used on appointments'),
   ('services.view',            'services',      'View services'),
   ('services.manage',          'services',      'Create and edit services and categories'),
   ('employees.view',           'employees',     'View employees'),
@@ -59,6 +60,7 @@ INSERT INTO permissions (code, module, description) VALUES
   ('pos.refund',               'pos',           'Refund sales'),
   ('sales.view',               'pos',           'View sales, invoices and payments'),
   ('sales.import',             'pos',           'Import past sales from Excel or CSV files'),
+  ('sales.correct',            'pos',           'Correct completed services (products used, price, staff) and review low-margin services'),
   ('inventory.view',           'inventory',     'View products and stock'),
   ('inventory.manage',         'inventory',     'Manage products and adjust stock'),
   ('suppliers.view',           'suppliers',     'View suppliers'),
@@ -92,7 +94,7 @@ SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN (
   'dashboard.view',
   'customers.view', 'customers.create', 'customers.update', 'customers.import',
   'appointments.view', 'appointments.create', 'appointments.update', 'appointments.cancel',
-  'appointments.complete', 'appointments.checkin',
+  'appointments.complete', 'appointments.checkin', 'appointments.record_products',
   'services.view', 'employees.view', 'attendance.view', 'attendance.self',
   'pos.create', 'sales.view', 'inventory.view'
 )
@@ -102,7 +104,7 @@ WHERE r.slug = 'receptionist'
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN (
   'dashboard.view',
-  'appointments.view_own', 'appointments.complete', 'appointments.checkin',
+  'appointments.view_own', 'appointments.complete', 'appointments.checkin', 'appointments.record_products',
   'services.view', 'attendance.self'
 )
 WHERE r.slug = 'stylist'
@@ -197,6 +199,11 @@ INSERT IGNORE INTO settings (setting_key, group_name, setting_value) VALUES
   ('financial.receipt_footer',     'financial', JSON_QUOTE('Thank you for choosing Zola Stylish. We look forward to seeing you again!')),
   ('financial.receipt_format',     'financial', JSON_QUOTE('thermal')),
   ('financial.allow_partial_payments', 'financial', CAST('true' AS JSON)),
+  -- Service money split: price − products → operations → staff / salon profit
+  ('financial.operations_percentage',   'financial', CAST('30' AS JSON)),
+  ('financial.staff_pool_percentage',   'financial', CAST('50' AS JSON)),
+  ('financial.salon_profit_percentage', 'financial', CAST('50' AS JSON)),
+  ('financial.staff_split_rule',        'financial', JSON_QUOTE('equal')),
   -- System
   ('system.timezone',              'system', JSON_QUOTE('Africa/Dar_es_Salaam')),
   ('system.language',              'system', JSON_QUOTE('en')),

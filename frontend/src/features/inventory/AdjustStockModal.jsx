@@ -11,7 +11,7 @@ const TYPES = [
   { value: 'stock_out', label: 'Stock out', hint: 'Units removed for another reason' },
   { value: 'adjustment', label: 'Stock count', hint: 'Enter the counted quantity; the difference is recorded' },
   { value: 'damage', label: 'Damaged', hint: 'Broken, spoiled or expired units' },
-  { value: 'internal_use', label: 'Salon use', hint: 'Used during services' },
+  { value: 'internal_use', label: 'Salon use', hint: 'Used in the salon, not on a billed service (products used on services come off stock at checkout)' },
 ];
 
 export function AdjustStockModal({ product, onClose }) {
@@ -33,7 +33,9 @@ export function AdjustStockModal({ product, onClose }) {
 
   if (!product) return null;
   const qty = Number(quantity) || 0;
-  const after = type === 'adjustment' ? qty : type === 'stock_in' ? product.quantity + qty : product.quantity - qty;
+  // Stock can be fractional (0.2 of a bottle): round to 3 decimals, as the server does.
+  const round3 = (v) => Math.round(v * 1000) / 1000;
+  const after = round3(type === 'adjustment' ? qty : type === 'stock_in' ? product.quantity + qty : product.quantity - qty);
 
   const submit = async () => {
     setBusy(true);
@@ -68,7 +70,7 @@ export function AdjustStockModal({ product, onClose }) {
       </div>
       <p className="mb-4 text-xs text-muted">{TYPES.find((t) => t.value === type).hint}</p>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input label={type === 'adjustment' ? 'Counted quantity' : 'Quantity'} type="number" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} data-autofocus />
+        <Input label={type === 'adjustment' ? 'Counted quantity' : 'Quantity'} type="number" min="0" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} data-autofocus />
         {type === 'stock_in' ? <Input label="Unit cost" type="number" min="0" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} hint="Updates the product's purchase price" /> : null}
         <Input label="Reason" className="sm:col-span-2" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="E.g. monthly stock count, bottle broken…" />
       </div>

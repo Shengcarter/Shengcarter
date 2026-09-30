@@ -5,6 +5,7 @@ const ApiError = require('../utils/ApiError');
 const { camelizeRow, camelizeRows } = require('../utils/case');
 const { contains } = require('../utils/sql');
 const audit = require('./auditService');
+const serviceFinance = require('./serviceFinanceService');
 
 /**
  * Salon service catalog: categories and services, plus which employees can
@@ -60,10 +61,11 @@ async function deleteCategory(id, ctx) {
 }
 
 // ---- Services -------------------------------------------------------------------
-const SERVICE_COLUMNS = `s.id, s.category_id, s.name, s.description, s.price, s.duration_minutes, s.commission_rate,
+const SERVICE_COLUMNS = `s.id, s.category_id, s.name, s.description, s.price, s.max_price, s.duration_minutes, s.commission_rate,
   s.is_active, s.is_demo, s.created_at, s.updated_at, c.name AS category_name`;
 
-async function attachEmployees(services, branchId) {
+async function attachEmployees(services, ctx) {
+  const branchId = ctx.branchId;
   if (!services.length) return services;
   const rows = await db.query(
     `SELECT es.service_id, e.id, e.full_name, e.calendar_color, e.branch_id
@@ -72,10 +74,18 @@ async function attachEmployees(services, branchId) {
      ORDER BY e.full_name`,
     branchId ? [services.map((s) => s.id), branchId] : [services.map((s) => s.id)],
   );
-  return services.map((s) => ({
-    ...s,
-    employees: rows.filter((r) => r.service_id === s.id).map((r) => ({ id: r.id, fullName: r.full_name, calendarColor: r.calendar_color })),
-  }));
+  // The products each service normally uses in this branch, with their expected cost.
+  const recipes = branchId ? await serviceFinance.recipesFor(services.map((s) => s.id), branchId) : new Map();
+  const showCosts = serviceFinance.canSeeCosts(ctx);
+  return services.map((s) => {
+    const recipe = (recipes.get(s.id) || []).map((r) => (showCosts ? r : { productId: r.productId, name: r.name, unit: r.unit, quantity: r.quantity, inStock: r.inStock }));
+    return {
+      ...s,
+      employees: rows.filter((r) => r.service_id === s.id).map((r) => ({ id: r.id, fullName: r.full_name, calendarColor: r.calendar_color })),
+      recipe,
+      ...(showCosts ? { expectedProductCost: recipe.reduce((sum, r) => sum + r.cost, 0) } : {}),
+    };
+  });
 }
 
 async function listServices(filters, ctx) {
@@ -102,13 +112,13 @@ async function listServices(filters, ctx) {
       params,
     ),
   );
-  return attachEmployees(rows, ctx.branchId);
+  return attachEmployees(rows, ctx);
 }
 
-async function getService(id, branchId) {
+async function getService(id, ctx) {
   const row = await db.queryOne(`SELECT ${SERVICE_COLUMNS} FROM services s JOIN service_categories c ON c.id = s.category_id WHERE s.id = ?`, [id]);
   if (!row) throw ApiError.notFound('Service not found');
-  const [service] = await attachEmployees([camelizeRow(row)], branchId);
+  const [service] = await attachEmployees([camelizeRow(row)], ctx);
   const stats = await db.queryOne(
     `SELECT COUNT(*) AS times_sold, COALESCE(SUM(si.line_total), 0) AS revenue
      FROM sale_items si JOIN sales s ON s.id = si.sale_id
@@ -138,6 +148,12 @@ async function setServiceEmployees(conn, serviceId, employeeIds, branchId) {
   await db.query('INSERT IGNORE INTO employee_services (employee_id, service_id) VALUES ?', [valid.map((e) => [e.id, serviceId])], conn);
 }
 
+function assertPriceRange(price, maxPrice) {
+  if (maxPrice !== null && maxPrice !== undefined && Number(maxPrice) < Number(price)) {
+    throw ApiError.validation([{ field: 'maxPrice', message: 'The highest price cannot be lower than the starting price' }]);
+  }
+}
+
 async function saveService(id, data, ctx) {
   if (data.categoryId) await assertCategory(data.categoryId);
   const duplicate = data.name && (await db.queryOne('SELECT id FROM services WHERE name = ? AND id <> ?', [data.name, id || 0]));
@@ -148,14 +164,18 @@ async function saveService(id, data, ctx) {
     if (id) {
       const existing = await db.queryOne('SELECT * FROM services WHERE id = ? FOR UPDATE', [id], conn);
       if (!existing) throw ApiError.notFound('Service not found');
+      const price = data.price ?? existing.price;
+      const maxPrice = data.maxPrice !== undefined ? data.maxPrice : existing.max_price;
+      assertPriceRange(price, maxPrice);
       await db.query(
-        `UPDATE services SET category_id = ?, name = ?, description = ?, price = ?, duration_minutes = ?, commission_rate = ?, is_active = ?
+        `UPDATE services SET category_id = ?, name = ?, description = ?, price = ?, max_price = ?, duration_minutes = ?, commission_rate = ?, is_active = ?
          WHERE id = ?`,
         [
           data.categoryId ?? existing.category_id,
           data.name ?? existing.name,
           data.description !== undefined ? data.description : existing.description,
-          data.price ?? existing.price,
+          price,
+          maxPrice,
           data.durationMinutes ?? existing.duration_minutes,
           data.commissionRate !== undefined ? data.commissionRate : existing.commission_rate,
           data.isActive !== undefined ? Number(data.isActive) : existing.is_active,
@@ -163,25 +183,30 @@ async function saveService(id, data, ctx) {
         ],
         conn,
       );
-      const priceChanged = data.price !== undefined && Number(data.price) !== Number(existing.price);
+      const priceChanged = Number(price) !== Number(existing.price) || Number(maxPrice ?? 0) !== Number(existing.max_price ?? 0);
       await audit.record(ctx, {
         action: 'service.updated', entityType: 'service', entityId: id, description: `Updated service ${data.name ?? existing.name}`,
-        metadata: priceChanged ? { oldPrice: existing.price, newPrice: data.price } : null,
+        metadata: {
+          ...(priceChanged ? { oldPrice: existing.price, newPrice: price, oldMaxPrice: existing.max_price, newMaxPrice: maxPrice } : {}),
+          ...(data.recipe ? { recipe: data.recipe } : {}),
+        },
       }, conn);
     } else {
+      assertPriceRange(data.price, data.maxPrice ?? null);
       const result = await db.query(
-        `INSERT INTO services (category_id, name, description, price, duration_minutes, commission_rate, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [data.categoryId, data.name, data.description || null, data.price, data.durationMinutes, data.commissionRate ?? null, data.isActive === false ? 0 : 1],
+        `INSERT INTO services (category_id, name, description, price, max_price, duration_minutes, commission_rate, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [data.categoryId, data.name, data.description || null, data.price, data.maxPrice ?? null, data.durationMinutes, data.commissionRate ?? null, data.isActive === false ? 0 : 1],
         conn,
       );
       targetId = result.insertId;
       await audit.record(ctx, { action: 'service.created', entityType: 'service', entityId: targetId, description: `Created service ${data.name}` }, conn);
     }
     if (data.employeeIds) await setServiceEmployees(conn, targetId, data.employeeIds, ctx.branchId);
+    if (data.recipe) await serviceFinance.setRecipe(conn, targetId, data.recipe, ctx.branchId);
     return targetId;
   });
-  return getService(serviceId, ctx.branchId);
+  return getService(serviceId, ctx);
 }
 
 /** Services that were ever booked or sold are deactivated instead of deleted. */

@@ -26,28 +26,32 @@ export function getFormatSettings() {
 
 const moneyFormatters = new Map();
 
-function moneyFormatter(locale, currency, decimals) {
-  const key = `${locale}|${currency}|${decimals}`;
+function moneyFormatter(locale, currency, decimals, maxDecimals = decimals) {
+  const key = `${locale}|${currency}|${decimals}|${maxDecimals}`;
   if (!moneyFormatters.has(key)) {
     let formatter;
+    const digits = { minimumFractionDigits: decimals, maximumFractionDigits: Math.max(decimals, maxDecimals) };
     try {
-      formatter = new Intl.NumberFormat(locale, { style: 'currency', currency, minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+      formatter = new Intl.NumberFormat(locale, { style: 'currency', currency, ...digits });
     } catch {
-      formatter = new Intl.NumberFormat('en', { style: 'currency', currency, minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+      formatter = new Intl.NumberFormat('en', { style: 'currency', currency, ...digits });
     }
     moneyFormatters.set(key, formatter);
   }
   return moneyFormatters.get(key);
 }
 
-/** Format an amount in the configured currency, e.g. "TSh 25,000". */
-export function formatMoney(amount, { compact = false } = {}) {
+/**
+ * Format an amount in the configured currency, e.g. "TSh 25,000".
+ * `maxDecimals` allows extra digits when needed, e.g. a cost of TSh 33.33 per ml.
+ */
+export function formatMoney(amount, { compact = false, maxDecimals } = {}) {
   const { currency, decimals, locale } = getFormatSettings();
   const value = Number(amount || 0);
   if (compact && Math.abs(value) >= 1_000) {
     return new Intl.NumberFormat(locale, { style: 'currency', currency, notation: 'compact', maximumFractionDigits: 1 }).format(value);
   }
-  return moneyFormatter(locale, currency, decimals).format(value);
+  return moneyFormatter(locale, currency, decimals, maxDecimals ?? decimals).format(value);
 }
 
 export function formatNumber(value, options = {}) {

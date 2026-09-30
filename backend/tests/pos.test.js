@@ -4,7 +4,7 @@ const { signIn, uniquePhone, db } = require('./helpers');
 
 async function pick() {
   const service = await db.queryOne(
-    `SELECT s.id, s.price, es.employee_id, e.commission_rate AS employee_rate, s.commission_rate AS service_rate
+    `SELECT s.id, s.price, es.employee_id
      FROM services s JOIN employee_services es ON es.service_id = s.id JOIN employees e ON e.id = es.employee_id
      WHERE s.is_active = 1 AND e.status = 'active' ORDER BY s.id LIMIT 1`,
   );
@@ -27,7 +27,7 @@ describe('POS transactions', () => {
   test('completes a sale with server-calculated totals, stock, commission and loyalty', async () => {
     const { service, product } = await pick();
     const items = [
-      { type: 'service', serviceId: service.id, employeeId: service.employee_id },
+      { type: 'service', serviceId: service.id, employeeId: service.employee_id, consumption: [] },
       { type: 'product', productId: product.id, quantity: 2 },
     ];
     const quote = await admin.post('/sales/quote', { customerId, items, discount: { type: 'percentage', value: 10 } });
@@ -53,9 +53,15 @@ describe('POS transactions', () => {
     const ledger = await db.queryOne("SELECT quantity_change FROM inventory_transactions WHERE reference_type = 'sale' AND reference_id = ?", [sale.id]);
     expect(ledger.quantity_change).toBe(-2);
 
-    const commission = await db.queryOne('SELECT amount, base_amount FROM commissions WHERE sale_id = ?', [sale.id]);
-    const rate = Number(service.service_rate ?? service.employee_rate);
-    expect(Number(commission.amount)).toBe(Math.round((Number(commission.base_amount) * rate) / 100));
+    // The stylist's commission is their share of the service split (no products used here):
+    // price after discount → 30% operations → 50% staff pool.
+    const line = sale.items.find((i) => i.itemType === 'service');
+    const finance = await db.queryOne('SELECT * FROM sale_item_finance WHERE sale_item_id = ?', [line.id]);
+    expect(Number(finance.price)).toBe(Number(line.netAmount));
+    expect(Number(finance.operations_amount)).toBe(Math.round(Number(line.netAmount) * 0.3));
+    expect(Number(finance.staff_pool)).toBe(Math.round((Number(line.netAmount) - Number(finance.operations_amount)) * 0.5));
+    const commission = await db.queryOne('SELECT amount FROM commissions WHERE sale_id = ?', [sale.id]);
+    expect(Number(commission.amount)).toBe(Number(finance.staff_pool));
 
     const customer = await db.queryOne('SELECT loyalty_points, visit_count, total_spent FROM customers WHERE id = ?', [customerId]);
     expect(customer.visit_count).toBe(1);
@@ -66,12 +72,20 @@ describe('POS transactions', () => {
   test('prices sent by the browser are ignored', async () => {
     const { service } = await pick();
     const res = await admin.post('/sales', {
-      items: [{ type: 'service', serviceId: service.id, employeeId: service.employee_id, unitPrice: 1, price: 1 }],
+      items: [{ type: 'service', serviceId: service.id, employeeId: service.employee_id, consumption: [], unitPrice: 1 }],
       payments: [{ method: 'cash', amount: 99999999 }],
       total: 1,
     });
     expect(res.status).toBe(201);
     expect(res.body.data.subtotal).toBe(Number(service.price));
+
+    // A fixed-price service cannot be charged at another price.
+    const cheaper = await admin.post('/sales', {
+      items: [{ type: 'service', serviceId: service.id, employeeId: service.employee_id, consumption: [], price: 1 }],
+      payments: [{ method: 'cash', amount: 99999999 }],
+    });
+    expect(cheaper.status).toBe(422);
+    expect(cheaper.body.errors[0]).toMatchObject({ field: 'items.0.price', message: expect.stringMatching(/fixed price/) });
   });
 
   test('a failed sale changes nothing (transaction rollback)', async () => {
@@ -86,7 +100,7 @@ describe('POS transactions', () => {
 
   test('payment rules: no change from cards, walk-ins pay in full', async () => {
     const { service } = await pick();
-    const items = [{ type: 'service', serviceId: service.id, employeeId: service.employee_id }];
+    const items = [{ type: 'service', serviceId: service.id, employeeId: service.employee_id, consumption: [] }];
     const card = await admin.post('/sales', { items, payments: [{ method: 'card', amount: Number(service.price) * 3 }] });
     expect(card.status).toBe(422);
     const walkInPartial = await admin.post('/sales', { items, payments: [{ method: 'cash', amount: 1000 }] });
@@ -95,7 +109,7 @@ describe('POS transactions', () => {
 
   test('partial payment leaves a balance that can be settled later', async () => {
     const { service } = await pick();
-    const items = [{ type: 'service', serviceId: service.id, employeeId: service.employee_id }];
+    const items = [{ type: 'service', serviceId: service.id, employeeId: service.employee_id, consumption: [] }];
     const res = await admin.post('/sales', { customerId, items, payments: [{ method: 'mobile_money', amount: 1000, reference: 'MP-TEST' }] });
     expect(res.status).toBe(201);
     expect(res.body.data.paymentStatus).toBe('partial');
@@ -108,7 +122,7 @@ describe('POS transactions', () => {
 
   test('refund restores stock, reverses commission and customer statistics', async () => {
     const { service, product } = await pick();
-    const items = [{ type: 'service', serviceId: service.id, employeeId: service.employee_id }, { type: 'product', productId: product.id, quantity: 1 }];
+    const items = [{ type: 'service', serviceId: service.id, employeeId: service.employee_id, consumption: [] }, { type: 'product', productId: product.id, quantity: 1 }];
     const q = (await admin.post('/sales/quote', { customerId, items })).body.data;
     const sale = (await admin.post('/sales', { customerId, items, payments: [{ method: 'cash', amount: q.total }] })).body.data;
     const stockBefore = (await db.queryOne('SELECT quantity FROM products WHERE id = ?', [product.id])).quantity;

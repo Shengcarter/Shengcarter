@@ -22,7 +22,7 @@ How the code base is organised, the rules every module follows, and where to mak
 └──────────────┬──────────────────────────────────────────────────────────────────┘
                │ mysql2 pool · UTC session time zone · prepared statements
 ┌──────────────▼──────────────┐     ┌────────────────────────────────────────────┐
-│ MySQL 8 · 43 tables · InnoDB │     │ Optional providers: SMTP · Africa's Talking │
+│ MySQL 8 · 48 tables · InnoDB │     │ Optional providers: SMTP · Africa's Talking │
 │ FKs, indexes, CHECKs         │     │ · Twilio · WhatsApp Cloud API · Claude API  │
 └──────────────────────────────┘     └────────────────────────────────────────────┘
 ```
@@ -116,7 +116,7 @@ Race conditions are prevented with row locks inside the transaction:
 | Document numbers | atomic `UPDATE … LAST_INSERT_ID(current_value + 1)` on `sequences` | duplicate invoice/receipt numbers |
 
 ### Inventory ledger
-Stock is never edited directly. Every change (purchase, sale, refund, count adjustment, damage, salon use) writes a `stock_movements` row with the quantity change and `balance_after`, and updates `products.quantity` in the same transaction. The ledger therefore always explains the current quantity, and the tests check that it does.
+Stock is never edited directly. Every change (purchase, sale, products used on a service, refund, count adjustment, damage, salon use) writes a `stock_movements` row with the quantity change and `balance_after`, and updates `products.quantity` in the same transaction. The ledger therefore always explains the current quantity, and the tests check that it does.
 
 ### Branches
 Business records carry `branch_id`. Users work in their own branch; users with `branches.manage` can switch branch with the `X-Branch-Id` header (the branch switcher in the top bar). Services filter by `ctx.branchId`; the branch comparison report is the only cross-branch view.
@@ -174,11 +174,15 @@ To add a permission: insert it in `database/seed.sql` (and a migration for exist
 
 ## 9. Reports and exports
 
-`reportService` returns JSON for each report (sales, customers, services, staff, inventory, expenses, profit & loss, branches) with the period, comparison with the previous period and a table. `exportService` renders the same data to CSV (UTF-8 BOM, formula-injection protection), Excel (ExcelJS with number formats) and PDF (PDFKit with business header and page numbers). Exports require `reports.export` and are audited.
+`reportService` returns JSON for each report (sales, customers, services, staff, inventory, expenses, profit & loss, service costing, branches) with the period, comparison with the previous period and a table. `exportService` renders the same data to CSV (UTF-8 BOM, formula-injection protection), Excel (ExcelJS with number formats) and PDF (PDFKit with business header and page numbers). Exports require `reports.export` and are audited.
 
 Profit & loss is on a cash basis: net sales − cost of goods sold (purchase price at the time of sale) − expenses (including commission paid out). Staff are paid by commission only; because commission is paid out once a period, cash profit jumps on payday, so the P&L and the dashboard also show **profit after commission**: gross profit − running costs (every expense except commission payouts) − commission earned in the period (`commissionEarned`: commission when earned, refunds excluded, plus payout bonuses minus deductions spread over each payout's days). Once all commission for a period has been paid out, the two figures are equal. The expense insights compare running costs and commission the same way, so they are not distorted by paydays.
 
-**Several staff on one job.** `appointment_staff` holds an appointment's team (the first is also `appointments.employee_id`); conflicts, availability and working hours are checked for every member, and the calendar shows the appointment in each member's column. `sale_item_staff` holds who performed each sale line with their equal share of its value and commission (`pricing.shareServiceLine`, with `splitEvenly` giving the rounding remainder one unit at a time so shares always add up); `commissions` has one row per person per line. Staff reports, the dashboard and employee performance read the shares, so staff figures add up to the salon's total.
+**Several staff on one job.** `appointment_staff` holds an appointment's team (the first is also `appointments.employee_id`); conflicts, availability and working hours are checked for every member, and the calendar shows the appointment in each member's column. `sale_item_staff` holds who performed each sale line with their equal share of its value and of its staff pool (`pricing.splitEvenly` gives the rounding remainder one unit at a time so shares always add up); `commissions` has one row per person per line. Staff reports, the dashboard and employee performance read the shares, so staff figures add up to the salon's total.
+
+**Service costing.** Every service sold is split by `services/costing.js` (pure, unit-tested) in a fixed order: price charged − cost of the products actually used → operations % → staff % / salon profit % of the rest (Settings → Financial; staff + salon must be 100 %). Product cost is the quantity used × the product's recorded purchase cost per usage unit (`purchase_price ÷ usage_per_unit`, e.g. a 10,000 bottle of 500 ml costs 20 per ml), never the retail price. `serviceFinanceService` does the rest inside the sale's transaction: it saves the products used (`sale_item_products`, with the unit cost at that moment), takes them out of stock (`service_use` ledger rows; stock is `DECIMAL(12,3)` so 0.2 of a bottle is exact), saves the breakdown with the percentages used (`sale_item_finance`, whose check constraint requires product cost + operations + staff pool + salon profit = price), and writes each person's share as their commission. Zero or negative margins pay nobody a negative amount: operations and staff get 0, a loss is negative salon profit, and the line waits for review. Recipes (`service_products`) and products recorded by stylists on appointments (`appointment_products`) only pre-fill checkout. Corrections (`sales.correct`) recalculate with the original percentages, move stock for the difference, update commissions and pending payouts (refused once a commission is paid out) and keep before/after snapshots in `sale_item_finance_revisions`. Sales' `cost_of_goods` includes the products used on services, so the profit & loss counts them.
+
+Extension points: a split rule other than `equal` (`financial.staff_split_rule`, stored per breakdown), other percentages per service or staff member (the rates are stored per breakdown, not looked up later), and batch costing (the unit cost is chosen in one place, `serviceFinanceService.priceUsage`).
 
 ---
 

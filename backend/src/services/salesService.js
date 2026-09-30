@@ -9,9 +9,10 @@ const { contains } = require('../utils/sql');
 const { D, toNumber } = require('../utils/money');
 const { nextSequenceValue, formatNumber } = require('../utils/sequence');
 const { localDateRange, localDateString } = require('../utils/time');
-const { calculateTotals, applyPayments, shareServiceLine, splitEvenly } = require('./pricing');
+const { calculateTotals, applyPayments, splitEvenly } = require('./pricing');
 const settings = require('./settingsService');
 const inventoryService = require('./inventoryService');
+const serviceFinance = require('./serviceFinanceService');
 const loyaltyService = require('./loyaltyService');
 const notificationService = require('./notificationService');
 const messaging = require('./messaging');
@@ -21,13 +22,15 @@ const audit = require('./auditService');
  * Point of sale.
  *
  * createSale() is a single database transaction:
- *   BEGIN → sale → sale items → staff shares + commissions → payments → stock deduction
+ *   BEGIN → sale → sale items → for each service: products used taken out of
+ *   stock, money split saved (price − products → operations → staff / salon),
+ *   staff shares + commissions → payments → retail stock deduction
  *   → loyalty (redeem + earn) → customer stats → appointment completed
  *   → activity log → COMMIT
  * Any failure (e.g. not enough stock) rolls everything back, so a sale is
  * never partially saved. All amounts are computed here with decimal maths;
- * the browser only sends what was sold and how it was paid. A service done by
- * several people is shared equally between them, commission included.
+ * the browser only sends what was sold, the products used and how it was
+ * paid. A service done by several people shares the staff pool equally.
  */
 
 function moneySettings() {
@@ -73,18 +76,30 @@ function staffOf(item) {
 
 /**
  * Load and validate every line item against the database (prices come from
- * here, never the browser). Products are row-locked when `lock` is true.
+ * here, never the browser). Products, sold or used on services, are
+ * row-locked when `lock` is true. `requireUsage`: services with a recipe must
+ * say which products were actually used (an empty list means none).
  */
-async function resolveLines(conn, items, branchId, { lock = true, requireEmployee = true } = {}) {
+async function resolveLines(conn, items, branchId, { lock = true, requireEmployee = true, requireUsage = false, decimals = 0 } = {}) {
   const serviceIds = items.filter((i) => i.type === 'service').map((i) => i.serviceId);
   const productIds = items.filter((i) => i.type === 'product').map((i) => i.productId);
+  const usedIds = items.filter((i) => i.type === 'service').flatMap((i) => (i.consumption || []).map((c) => c.productId));
   const employeeIds = [...new Set(items.flatMap(staffOf))];
 
-  const services = serviceIds.length ? await db.query('SELECT id, name, price, commission_rate, is_active FROM services WHERE id IN (?)', [serviceIds], conn) : [];
-  // Products are locked so the stock check and deduction see the same quantity.
-  const products = productIds.length
-    ? await db.query(`SELECT id, name, branch_id, selling_price, purchase_price, quantity, status, is_retail FROM products WHERE id IN (?)${lock ? ' FOR UPDATE' : ''}`, [productIds], conn)
+  const services = serviceIds.length ? await db.query('SELECT id, name, price, max_price, is_active FROM services WHERE id IN (?)', [serviceIds], conn) : [];
+  // Products are locked (in id order) so the stock check and deduction see the same quantity.
+  const productRows = productIds.length || usedIds.length
+    ? await db.query(
+      `SELECT id, name, branch_id, unit, usage_unit, usage_per_unit, selling_price, purchase_price, quantity, status, is_retail
+       FROM products WHERE id IN (?) ORDER BY id${lock ? ' FOR UPDATE' : ''}`,
+      [[...new Set([...productIds, ...usedIds])]],
+      conn,
+    )
     : [];
+  const productMap = new Map(productRows.map((p) => [p.id, p]));
+  const recipes = requireUsage
+    ? await serviceFinance.recipesFor(items.filter((i) => i.type === 'service' && !i.consumption).map((i) => i.serviceId), branchId, conn)
+    : new Map();
   const employees = employeeIds.length
     ? await db.query("SELECT id, full_name, branch_id, commission_rate, status FROM employees WHERE id IN (?)", [employeeIds], conn)
     : [];
@@ -103,15 +118,31 @@ async function resolveLines(conn, items, branchId, { lock = true, requireEmploye
         return null;
       }
       if (!team.length && requireEmployee) errors.push({ field: `items.${index}.employeeIds`, message: `Choose who performed ${service.name}` });
-      // The service's own rate wins; otherwise each person earns their own rate.
-      const serviceRate = service.commission_rate === null ? null : Number(service.commission_rate);
+      // Fixed price, or the actual price chosen within the service's range.
+      let unitPrice = Number(service.price);
+      if (item.price !== undefined && !D(item.price).equals(service.price)) {
+        if (service.max_price === null) {
+          errors.push({ field: `items.${index}.price`, message: `${service.name} has a fixed price` });
+        } else if (D(item.price).lessThan(service.price) || D(item.price).greaterThan(service.max_price)) {
+          errors.push({ field: `items.${index}.price`, message: `Enter a price for ${service.name} between ${Number(service.price).toLocaleString('en')} and ${Number(service.max_price).toLocaleString('en')}` });
+        } else {
+          unitPrice = Number(item.price);
+        }
+      }
+      // Products actually used, costed at the salon's recorded purchase cost.
+      let usage = { lines: [], total: D(0) };
+      if (item.consumption) {
+        usage = serviceFinance.priceUsage(item.consumption, productMap, { branchId, decimals, field: `items.${index}.consumption` });
+      } else if (recipes.get(service.id)?.length) {
+        errors.push({ field: `items.${index}.consumption`, message: `Confirm the products used for ${service.name} (clear the list if none were used)` });
+      }
       return {
         type: 'service', serviceId: service.id, productId: null, employeeId: team[0]?.id || null, staff: team,
-        description: service.name, quantity: item.quantity || 1, unitPrice: service.price, unitCost: 0,
-        serviceRate, commissionRate: serviceRate ?? team[0]?.commissionRate ?? 0,
+        description: service.name, quantity: item.quantity || 1, unitPrice, unitCost: 0, usage,
+        priceRange: service.max_price === null ? null : { min: Number(service.price), max: Number(service.max_price) },
       };
     }
-    const product = products.find((p) => p.id === item.productId);
+    const product = productMap.get(item.productId);
     if (!product || product.branch_id !== branchId || product.status !== 'active' || !product.is_retail) {
       errors.push({ field: `items.${index}.productId`, message: 'Product is not available for sale in this branch' });
       return null;
@@ -122,53 +153,45 @@ async function resolveLines(conn, items, branchId, { lock = true, requireEmploye
     }
     return {
       type: 'product', serviceId: null, productId: product.id, employeeId: team[0]?.id || null, staff: team.slice(0, 1),
-      description: product.name, quantity: item.quantity, unitPrice: product.selling_price, unitCost: product.purchase_price, serviceRate: null, commissionRate: 0,
+      description: product.name, quantity: item.quantity, unitPrice: product.selling_price, unitCost: product.purchase_price,
     };
   });
   if (errors.length) throw ApiError.validation(errors);
+
+  // Products used on services come out of the same stock as products sold.
+  const needs = new Map();
+  for (const line of lines) {
+    for (const used of line.usage?.lines || []) needs.set(used.productId, (needs.get(used.productId) || D(0)).plus(used.stockQuantity));
+  }
+  for (const line of lines.filter((l) => l.type === 'product' && needs.has(l.productId))) needs.set(line.productId, needs.get(line.productId).plus(line.quantity));
+  serviceFinance.assertInStock(needs, productMap);
   return lines;
 }
 
 /**
- * Insert one sale line with its staff shares and commissions. A service line
- * is shared equally between the people who performed it, commission included.
- * Product lines (who sold it) and imported history earn no commission, but the
- * value is still shared so staff figures add up.
+ * Insert one sale line with its staff shares. A service line carries its money
+ * split (`line.costing`): the products used are saved and taken out of stock,
+ * the breakdown is saved, and the staff pool is shared equally between the
+ * people who performed it as their commission. Product lines (who sold it)
+ * and imported history have no split and earn no commission, but the value
+ * is still shared so staff figures add up.
  */
-async function insertLine(conn, { saleId, line, branchId, at, decimals, withCommission = true }) {
-  let shares;
-  let commission = D(0);
-  let rate = 0;
-  if (line.type === 'service' && line.staff.length && withCommission) {
-    ({ shares, commission, rate } = shareServiceLine({ netAmount: line.netAmount, serviceRate: line.serviceRate, staff: line.staff, decimals }));
-  } else {
-    const values = splitEvenly(line.netAmount, Math.max(1, line.staff.length), decimals);
-    shares = line.staff.map((person, i) => ({ employeeId: person.id, revenueShare: values[i], rate: 0, commission: D(0) }));
-  }
+async function insertLine(conn, { saleId, line, branchId, at, decimals, invoiceNumber = null, userId = null }) {
+  const costing = line.costing || null;
+  const revenueShares = splitEvenly(line.netAmount, Math.max(1, line.staff.length), decimals);
+  const unitCost = costing ? toNumber(line.usage.total.dividedBy(line.quantity)) : line.unitCost;
   const itemResult = await db.query(
     `INSERT INTO sale_items (sale_id, item_type, service_id, product_id, employee_id, description, quantity, unit_price, unit_cost,
                              line_total, net_amount, commission_rate, commission_amount)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [saleId, line.type, line.serviceId, line.productId, line.employeeId, line.description, line.quantity, line.unitPrice, line.unitCost,
-      toNumber(line.lineTotal), toNumber(line.netAmount), rate, toNumber(commission)],
+    [saleId, line.type, line.serviceId, line.productId, line.employeeId, line.description, line.quantity, line.unitPrice, unitCost,
+      toNumber(line.lineTotal), toNumber(line.netAmount), costing ? serviceFinance.effectiveRate(costing) : 0, costing ? toNumber(costing.staffPool) : 0],
     conn,
   );
-  for (const [i, share] of shares.entries()) {
-    await db.query(
-      'INSERT INTO sale_item_staff (sale_item_id, employee_id, revenue_share, commission_amount, sort_order) VALUES (?, ?, ?, ?, ?)',
-      [itemResult.insertId, share.employeeId, toNumber(share.revenueShare), toNumber(share.commission), i],
-      conn,
-    );
-    if (share.commission.greaterThan(0)) {
-      await db.query(
-        `INSERT INTO commissions (employee_id, branch_id, sale_id, sale_item_id, base_amount, rate, amount, earned_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [share.employeeId, branchId, saleId, itemResult.insertId, toNumber(share.revenueShare), share.rate, toNumber(share.commission), at, at],
-        conn,
-      );
-    }
-  }
-  return itemResult.insertId;
+  const saleItemId = itemResult.insertId;
+  if (costing) await serviceFinance.recordLine(conn, { saleItemId, saleId, branchId, line, costing, at, invoiceNumber, userId });
+  await serviceFinance.writeStaff(conn, { saleItemId, saleId, branchId, staff: line.staff, revenueShares, costing, at });
+  return saleItemId;
 }
 
 async function createSale(data, ctx, options = {}) {
@@ -196,7 +219,7 @@ async function createSale(data, ctx, options = {}) {
     }
 
     // Pricing (server-authoritative)
-    const lines = await resolveLines(conn, data.items, ctx.branchId);
+    const lines = await resolveLines(conn, data.items, ctx.branchId, { requireUsage: true, decimals });
     const discount = data.discount || { type: 'none', value: 0 };
     const pointsToRedeem = customer ? Number(data.loyaltyPoints || 0) : 0;
     let totals;
@@ -223,7 +246,13 @@ async function createSale(data, ctx, options = {}) {
       if (!allowPartial) throw ApiError.validation([{ field: 'payments', message: 'Partial payments are disabled in Settings. Collect the full amount.' }]);
     }
 
-    const costOfGoods = lines.reduce((sum, l) => sum.plus(D(l.unitCost).times(l.quantity)), D(0));
+    // Each service's money split, from what it was charged after discounts.
+    const rates = serviceFinance.rules();
+    for (const line of totals.lines) {
+      if (line.type === 'service') line.costing = serviceFinance.costLine({ line, tax, decimals, rates });
+    }
+    // Cost of goods: retail products sold plus products used on services.
+    const costOfGoods = lines.reduce((sum, l) => sum.plus(l.type === 'service' ? l.usage.total : D(l.unitCost).times(l.quantity)), D(0));
     const numbers = await nextDocumentNumbers(conn);
     const soldAt = options.soldAt || new Date();
 
@@ -246,7 +275,7 @@ async function createSale(data, ctx, options = {}) {
 
     // Items + staff shares + commissions + stock
     for (const line of totals.lines) {
-      await insertLine(conn, { saleId, line, branchId: ctx.branchId, at: soldAt, decimals });
+      await insertLine(conn, { saleId, line, branchId: ctx.branchId, at: soldAt, decimals, invoiceNumber: numbers.invoiceNumber, userId: ctx.userId });
       if (line.type === 'product') {
         await inventoryService.changeStock(conn, {
           productId: line.productId, branchId: ctx.branchId, change: -line.quantity, type: 'sale', unitCost: line.unitCost,
@@ -306,7 +335,8 @@ async function createSale(data, ctx, options = {}) {
     if (customer && paid.amountPaid.greaterThan(0)) {
       await sendThankYou(customer, { amount: toNumber(paid.amountPaid), invoiceNumber: numbers.invoiceNumber, saleId }, ctx, conn);
     }
-    return { saleId, productIds: lines.filter((l) => l.productId).map((l) => l.productId) };
+    const usedIds = lines.flatMap((l) => (l.usage?.lines || []).map((u) => u.productId));
+    return { saleId, productIds: [...new Set([...lines.filter((l) => l.productId).map((l) => l.productId), ...usedIds])] };
   });
 
   await inventoryService.alertLowStock(result.productIds, ctx.branchId).catch((err) => logger.error({ err }, 'Low stock alert failed'));
@@ -324,7 +354,7 @@ async function quote(data, ctx) {
     customer = await db.queryOne('SELECT id, loyalty_points, lifetime_points FROM customers WHERE id = ? AND deleted_at IS NULL', [data.customerId]);
     if (!customer) throw ApiError.validation([{ field: 'customerId', message: 'Customer not found' }]);
   }
-  const lines = await resolveLines(null, data.items, ctx.branchId, { lock: false, requireEmployee: false });
+  const lines = await resolveLines(null, data.items, ctx.branchId, { lock: false, requireEmployee: false, decimals });
   const discount = data.discount || { type: 'none', value: 0 };
   const points = customer ? Number(data.loyaltyPoints || 0) : 0;
   let totals;
@@ -341,11 +371,31 @@ async function quote(data, ctx) {
   const maxRedeemable = customer && cfg.enabled && cfg.redeemValuePerPoint > 0
     ? Math.min(customer.loyalty_points, maxByPercent.dividedBy(cfg.redeemValuePerPoint).floor().toNumber())
     : 0;
+  // Service lines show the products used and a flag for a zero or negative margin;
+  // people who see costs also get the full money split.
+  const rates = serviceFinance.rules();
+  const showCosts = serviceFinance.canSeeCosts(ctx);
   return {
-    lines: totals.lines.map((l) => ({
-      type: l.type, serviceId: l.serviceId, productId: l.productId, employeeId: l.employeeId, employeeIds: l.staff.map((m) => m.id), description: l.description,
-      quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: toNumber(l.lineTotal), netAmount: toNumber(l.netAmount),
-    })),
+    lines: totals.lines.map((l) => {
+      const out = {
+        type: l.type, serviceId: l.serviceId, productId: l.productId, employeeId: l.employeeId, employeeIds: l.staff.map((m) => m.id), description: l.description,
+        quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: toNumber(l.lineTotal), netAmount: toNumber(l.netAmount),
+      };
+      if (l.type !== 'service') return out;
+      const costing = serviceFinance.costLine({ line: l, tax, decimals, rates });
+      out.priceRange = l.priceRange;
+      out.productsUsed = serviceFinance.describeUsage(l.usage).map((u) => (showCosts ? u : { productId: u.productId, name: u.name, unit: u.unit, quantity: u.quantity }));
+      out.marginStatus = costing.marginStatus;
+      if (showCosts) {
+        const m = (v) => toNumber(v, decimals);
+        out.split = {
+          price: m(costing.price), productCost: m(costing.productCost), amountAfterProducts: m(costing.afterProducts), operations: m(costing.operations),
+          distributable: m(costing.distributable), staffPool: m(costing.staffPool), salonProfit: m(costing.salonProfit),
+          staffShares: costing.staffShares.map(m), rates: costing.rates,
+        };
+      }
+      return out;
+    }),
     subtotal: toNumber(totals.subtotal),
     discountAmount: toNumber(totals.discountAmount),
     loyaltyDiscount: toNumber(totals.loyaltyDiscount),
@@ -406,10 +456,11 @@ async function getById(id, ctx) {
       [items.map((i) => i.id)],
     )
     : [];
+  const finance = await serviceFinance.forSale(id, items.filter((i) => i.item_type === 'service').map((i) => i.id), ctx);
   const withStaff = camelizeRows(items).map((item) => {
     const staff = staffRows.filter((r) => r.sale_item_id === item.id)
       .map((r) => ({ id: r.employee_id, fullName: r.full_name, revenueShare: Number(r.revenue_share), commissionAmount: Number(r.commission_amount) }));
-    return { ...item, staff, employeeName: staff.length ? staff.map((m) => m.fullName).join(', ') : item.employeeName };
+    return { ...item, ...(finance.get(item.id) || {}), staff, employeeName: staff.length ? staff.map((m) => m.fullName).join(', ') : item.employeeName };
   });
   const result = { ...camelizeRow(sale), items: withStaff, payments: camelizeRows(payments) };
   // Cost figures are only for people who can see financial reports.
@@ -665,6 +716,8 @@ async function appointmentCheckout(appointmentId, ctx) {
   const services = await db.query('SELECT service_id AS serviceId FROM appointment_services WHERE appointment_id = ? ORDER BY sort_order', [appointmentId]);
   // Everyone on the appointment performed its services unless the cashier changes a line.
   const staff = await db.query('SELECT employee_id FROM appointment_staff WHERE appointment_id = ? ORDER BY sort_order', [appointmentId]);
+  // Products used per service: what the stylist recorded, else the service's recipe.
+  const usage = await serviceFinance.appointmentUsage(appointment, services.map((s) => s.serviceId));
   return {
     id: appointment.id,
     code: appointment.code,
@@ -673,6 +726,7 @@ async function appointmentCheckout(appointmentId, ctx) {
     employeeId: appointment.employee_id,
     employeeIds: staff.length ? staff.map((r) => r.employee_id) : [appointment.employee_id],
     serviceIds: services.map((s) => s.serviceId),
+    usage,
     billedSale: billed ? { id: billed.id, invoiceNumber: billed.invoice_number } : null,
   };
 }

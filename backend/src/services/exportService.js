@@ -109,6 +109,51 @@ const DOCUMENTS = {
       },
     ],
   }),
+  costing: (r) => ({
+    summary: [
+      ['Services sold', r.summary.services, 'number'],
+      ['Service sales', r.summary.sales, 'money'],
+      ['Product costs (products used)', r.summary.productCost, 'money'],
+      ['Operating allocation', r.summary.operations, 'money'],
+      ['Staff earnings', r.summary.staffEarnings, 'money'],
+      ['Salon profit', r.summary.salonProfit, 'money'],
+      ['Average service value', r.summary.averageServiceValue, 'money'],
+      ['Average salon profit per service', r.summary.averageProfit, 'money'],
+      ['Running costs recorded (for comparison)', r.summary.runningCosts, 'money'],
+      ['Zero / negative margin services', `${r.summary.flagged.zero} / ${r.summary.flagged.negative} (${r.summary.flagged.pending} to review)`, 'text'],
+    ],
+    tables: [
+      {
+        title: 'By period',
+        columns: [col('period', 'Period', 'period'), col('services', 'Services', 'number'), col('sales', 'Sales', 'money'), col('productCost', 'Products', 'money'),
+          col('operations', 'Operations', 'money'), col('staffEarnings', 'Staff', 'money'), col('salonProfit', 'Salon profit', 'money')],
+        rows: r.series,
+      },
+      {
+        title: 'By stylist',
+        columns: [col('name', 'Staff member'), col('services', 'Services', 'number'), col('revenue', 'Revenue (share)', 'money'), col('productCost', 'Products (share)', 'money'),
+          col('earnings', 'Earnings', 'money'), col('averageEarnings', 'Avg per service', 'money')],
+        rows: r.staff,
+      },
+      {
+        title: 'By service',
+        columns: [col('name', 'Service'), col('count', 'Times', 'number'), col('revenue', 'Revenue', 'money'), col('productCost', 'Products', 'money'), col('operations', 'Operations', 'money'),
+          col('staffEarnings', 'Staff', 'money'), col('salonProfit', 'Salon profit', 'money'), col('averageProfit', 'Avg profit', 'money')],
+        rows: r.services,
+      },
+      {
+        title: 'By product',
+        columns: [col('name', 'Product'), col('quantity', 'Used', 'decimal'), col('unit', 'Unit'), col('cost', 'Cost', 'money'), col('timesUsed', 'Services', 'number'), col('services', 'Used in')],
+        rows: r.products,
+      },
+      {
+        title: 'Zero or negative margin',
+        columns: [col('invoiceNumber', 'Invoice'), col('service', 'Service'), col('price', 'Price', 'money'), col('productCost', 'Products', 'money'), col('salonProfit', 'Salon profit', 'money'),
+          col('marginStatus', 'Margin', 'title'), col('reviewStatus', 'Review', 'title'), col('performedAt', 'Date', 'datetime')],
+        rows: r.flagged,
+      },
+    ],
+  }),
   inventory: (r) => ({
     summary: [
       ['Active products', r.summary.products, 'number'],

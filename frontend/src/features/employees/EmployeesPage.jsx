@@ -37,7 +37,6 @@ function StaffList() {
     },
     { key: 'phone', header: 'Phone', render: (e) => e.phone || '—' },
     { key: 'serviceCount', header: 'Services', align: 'right' },
-    { key: 'commissionRate', header: 'Commission', align: 'right', render: (e) => `${e.commissionRate}%` },
     { key: 'employmentDate', header: 'Since', hideOnMobile: true, render: (e) => formatDate(e.employmentDate) },
     {
       key: 'status',

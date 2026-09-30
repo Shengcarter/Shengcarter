@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowDown, CalendarCheck, FileUp, Gift, History, Loader2, Minus, NotebookPen, Plus, ShoppingBag, Trash2, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, CalendarCheck, ChevronDown, FileUp, Gift, History, Loader2, Minus, NotebookPen, Package, Plus, ShoppingBag, Trash2, Users, X } from 'lucide-react';
 import { Badge, Button, ButtonLink, Card, Drawer, EmptyState, IconButton, Input, Segmented, Textarea } from '../../components/ui';
 import { http } from '../../api/client';
 import { cn } from '../../utils/cn';
@@ -11,6 +11,9 @@ import { useDebounce, useDocumentTitle, useMediaQuery, usePermission } from '../
 import { useAuthStore } from '../../store/authStore';
 import { CustomerPicker } from '../customers/CustomerPicker';
 import { useEmployeeOptions } from '../services/api';
+import { ProductsUsedEditor, cleanUsage } from '../costing/ProductsUsedEditor';
+import { MarginBadge, SplitBreakdown } from '../costing/SplitBreakdown';
+import { useUsableProducts } from '../costing/api';
 import { Catalog } from './Catalog';
 import { PaymentModal } from './PaymentModal';
 import { ReceiptModal } from './ReceiptModal';
@@ -25,7 +28,7 @@ function cartReducer(state, action) {
     case 'customer':
       return { ...state, customer: action.customer, loyaltyPoints: '' };
     case 'addService':
-      return { ...state, items: [...state.items, { key: nextKey(), type: 'service', serviceId: action.service.id, name: action.service.name, price: action.service.price, employeeIds: action.employeeIds || [], quantity: 1 }] };
+      return { ...state, items: [...state.items, serviceLine(action.service, action.employeeIds || [])] };
     case 'addProduct': {
       const existing = state.items.find((i) => i.type === 'product' && i.productId === action.product.id);
       if (existing) {
@@ -37,6 +40,10 @@ function cartReducer(state, action) {
       return { ...state, items: state.items.map((i) => (i.key === action.key ? { ...i, quantity: Math.max(1, Math.min(action.quantity, i.stock ?? 20)) } : i)) };
     case 'staff':
       return { ...state, items: state.items.map((i) => (i.key === action.key ? { ...i, employeeIds: action.employeeIds } : i)) };
+    case 'consumption':
+      return { ...state, items: state.items.map((i) => (i.key === action.key ? { ...i, consumption: action.consumption, usageSource: 'edited' } : i)) };
+    case 'price':
+      return { ...state, items: state.items.map((i) => (i.key === action.key ? { ...i, price: action.price } : i)) };
     case 'remove':
       return { ...state, items: state.items.filter((i) => i.key !== action.key) };
     case 'discount':
@@ -54,12 +61,36 @@ function cartReducer(state, action) {
   }
 }
 
+/**
+ * A service line starts with the products the service normally uses (its
+ * recipe), or what the stylist recorded on the appointment; the cashier
+ * confirms or changes them, and the money split uses what is sent.
+ */
+function serviceLine(service, employeeIds, usage = null) {
+  const products = usage ? usage.products : service.recipe || [];
+  return {
+    key: nextKey(),
+    type: 'service',
+    serviceId: service.id,
+    name: service.name,
+    price: service.price,
+    priceRange: service.maxPrice ? { min: service.price, max: service.maxPrice } : null,
+    employeeIds,
+    quantity: 1,
+    consumption: products.map((p) => ({ productId: p.productId, quantity: String(p.quantity), name: p.name, unit: p.unit })),
+    usageSource: usage?.source === 'recorded' ? `Recorded by ${usage.recordedBy || 'the stylist'}` : products.length ? 'Usual amounts for this service' : null,
+  };
+}
+
 function toPayload(cart) {
   return {
     customerId: cart.customer?.id,
     appointmentId: cart.appointment?.id,
     items: cart.items.map((i) => (i.type === 'service'
-      ? { type: 'service', serviceId: i.serviceId, employeeIds: i.employeeIds, quantity: i.quantity }
+      ? {
+          type: 'service', serviceId: i.serviceId, employeeIds: i.employeeIds, quantity: i.quantity, consumption: cleanUsage(i.consumption),
+          ...(i.priceRange && Number(i.price) !== Number(i.priceRange.min) ? { price: Number(i.price) || i.priceRange.min } : {}),
+        }
       : { type: 'product', productId: i.productId, employeeId: i.employeeId || undefined, quantity: i.quantity })),
     discount: cart.discount.type === 'none' || !Number(cart.discount.value) ? { type: 'none', value: 0 } : { type: cart.discount.type, value: Number(cart.discount.value) },
     loyaltyPoints: Number(cart.loyaltyPoints) || 0,
@@ -156,7 +187,45 @@ function StaffPicker({ item, employees, onChange }) {
   );
 }
 
-function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
+/**
+ * Products used on a service line, with a margin warning; people who see
+ * costs also get the live money split worked out by the server.
+ */
+function ServiceUsage({ item, line, dispatch, products, employees, showCosts }) {
+  const [open, setOpen] = useState(false);
+  const count = cleanUsage(item.consumption).length;
+  const cost = line?.split?.productCost;
+  const flagged = line?.marginStatus && line.marginStatus !== 'positive';
+  const names = item.employeeIds.map((id) => employees.find((e) => e.id === id)?.fullName || 'Staff');
+  return (
+    <div className="mt-1.5">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full min-w-0 items-center gap-1.5 text-left text-[11px] text-muted hover:text-fg">
+        <Package className="size-3 shrink-0" aria-hidden />
+        <span className="shrink-0">{count ? `${count} product${count === 1 ? '' : 's'} used` : 'No products used'}{showCosts && cost ? ` · ${formatMoney(cost)}` : ''}</span>
+        {item.usageSource && !flagged ? <span className="truncate">· {item.usageSource}</span> : null}
+        {flagged ? <MarginBadge status={line.marginStatus} /> : null}
+        <ChevronDown className={cn('ml-auto size-3.5 shrink-0 transition-transform', open && 'rotate-180')} aria-hidden />
+      </button>
+      {open ? (
+        <div className="mt-2 space-y-3 rounded-xl border border-line p-2.5">
+          <ProductsUsedEditor
+            value={item.consumption}
+            onChange={(consumption) => dispatch({ type: 'consumption', key: item.key, consumption })}
+            products={products}
+            showCosts={showCosts}
+            idPrefix={item.key}
+            emptyText="Record the hair, jelly, gel and other products used, or leave empty if none."
+          />
+          {showCosts && line?.split ? (
+            <SplitBreakdown compact split={line.split} staff={line.split.staffShares.map((amount, i) => ({ name: names[i] || 'Staff', amount }))} />
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CartPanel({ cart, dispatch, employees, products, showCosts, quote, onCharge, onClose }) {
   const q = quote.data;
   const missingStaff = cart.items.some((i) => i.type === 'service' && !i.employeeIds.length);
   const loyalty = q?.loyalty;
@@ -210,7 +279,21 @@ function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
                       </div>
                     </div>
                     <div className="mt-1.5 flex items-center gap-2">
-                      <span className="shrink-0 text-xs text-muted tabular-nums">{formatMoney(item.price)}{item.type === 'product' ? ` × ${item.quantity}` : ''}</span>
+                      {item.priceRange ? (
+                        <input
+                          aria-label={`Price for ${item.name} (${formatMoney(item.priceRange.min)} to ${formatMoney(item.priceRange.max)})`}
+                          title={`${formatMoney(item.priceRange.min)} – ${formatMoney(item.priceRange.max)}`}
+                          type="number"
+                          min={item.priceRange.min}
+                          max={item.priceRange.max}
+                          step="any"
+                          value={item.price}
+                          onChange={(e) => dispatch({ type: 'price', key: item.key, price: e.target.value })}
+                          className="h-7 w-24 shrink-0 rounded-lg border border-line bg-surface px-2 text-xs tabular-nums"
+                        />
+                      ) : (
+                        <span className="shrink-0 text-xs text-muted tabular-nums">{formatMoney(item.price)}{item.type === 'product' ? ` × ${item.quantity}` : ''}</span>
+                      )}
                       {item.type === 'service' ? (
                         <StaffPicker item={item} employees={employees} onChange={(employeeIds) => dispatch({ type: 'staff', key: item.key, employeeIds })} />
                       ) : (
@@ -222,7 +305,10 @@ function CartPanel({ cart, dispatch, employees, quote, onCharge, onClose }) {
                       )}
                     </div>
                     {item.type === 'service' && item.employeeIds.length > 1 ? (
-                      <p className="mt-1 flex items-center gap-1 text-[11px] text-muted"><Users className="size-3" aria-hidden />Done together · commission shared equally between {item.employeeIds.length}</p>
+                      <p className="mt-1 flex items-center gap-1 text-[11px] text-muted"><Users className="size-3" aria-hidden />Done together · staff share split equally between {item.employeeIds.length}</p>
+                    ) : null}
+                    {item.type === 'service' ? (
+                      <ServiceUsage item={item} line={line} dispatch={dispatch} products={products} employees={employees} showCosts={showCosts} />
                     ) : null}
                   </li>
                 );
@@ -325,6 +411,8 @@ export default function PosPage() {
   const [completedSale, setCompletedSale] = useState(null);
   const employeesQuery = useEmployeeOptions({ includeInactive: false });
   const employees = employeesQuery.data || [];
+  const usable = useUsableProducts();
+  const showCosts = can('reports.financial') || can('sales.correct');
 
   // Hand-off from an appointment or a customer profile.
   useEffect(() => {
@@ -350,8 +438,9 @@ export default function PosPage() {
                 items: checkout.serviceIds
                   .map((sid) => services.find((s) => s.id === sid))
                   .filter(Boolean)
-                  // Everyone on the appointment performed its services; the cashier can change a line.
-                  .map((s) => ({ key: nextKey(), type: 'service', serviceId: s.id, name: s.name, price: s.price, employeeIds: checkout.employeeIds || [checkout.employeeId], quantity: 1 })),
+                  // Everyone on the appointment performed its services, with the products the
+                  // stylist recorded (or the usual ones); the cashier can change a line.
+                  .map((s) => serviceLine(s, checkout.employeeIds || [checkout.employeeId], checkout.usage?.find((u) => u.serviceId === s.id))),
               },
             });
           }
@@ -410,6 +499,8 @@ export default function PosPage() {
       cart={cart}
       dispatch={dispatch}
       employees={employees}
+      products={usable.data || []}
+      showCosts={showCosts}
       quote={quote}
       onCharge={() => setPaying(true)}
       onClose={isDesktop ? undefined : () => setCartOpen(false)}

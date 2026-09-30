@@ -4,6 +4,8 @@ const db = require('../config/database');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess, sendCreated, sendPaginated } = require('../utils/response');
 const appointmentService = require('../services/appointmentService');
+const serviceFinance = require('../services/serviceFinanceService');
+const { hasPermission } = require('../middleware/auth');
 
 async function calendar(req, res) {
   sendSuccess(res, await appointmentService.calendar(req.validQuery, req.ctx));
@@ -15,6 +17,18 @@ async function list(req, res) {
 
 async function get(req, res) {
   sendSuccess(res, await appointmentService.getById(req.params.id, req.ctx));
+}
+
+/** Products used on the appointment's services: recorded by the stylist, else each service's recipe. */
+async function products(req, res) {
+  const appointment = await appointmentService.getById(req.params.id, req.ctx); // applies "own appointments only"
+  const serviceIds = appointment.services.map((s) => s.serviceId ?? s.id);
+  sendSuccess(res, await serviceFinance.appointmentUsage({ id: appointment.id, branch_id: req.ctx.branchId }, serviceIds));
+}
+
+async function recordProducts(req, res) {
+  const ownOnly = !hasPermission(req.user, 'appointments.view');
+  sendSuccess(res, await serviceFinance.recordAppointmentProducts(req.params.id, req.body, req.ctx, { ownOnly }), 'Products used saved');
 }
 
 async function create(req, res) {
@@ -71,4 +85,4 @@ async function publicVerify(req, res) {
   sendSuccess(res, await appointmentService.publicVerify(req.params.token));
 }
 
-module.exports = { calendar, list, get, create, update, reschedule, changeStatus, checkIn, qr, availability, availableEmployees, publicVerify };
+module.exports = { calendar, list, get, create, update, reschedule, changeStatus, checkIn, qr, availability, availableEmployees, publicVerify, products, recordProducts };

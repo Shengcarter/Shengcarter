@@ -14,7 +14,7 @@ describe('reports', () => {
     today = DateTime.now().setZone(settings.get('system.timezone')).toISODate();
     // Make sure there is at least one sale and one expense today.
     const service = await db.queryOne("SELECT s.id, es.employee_id FROM services s JOIN employee_services es ON es.service_id = s.id WHERE s.is_active = 1 LIMIT 1");
-    await admin.post('/sales', { items: [{ type: 'service', serviceId: service.id, employeeId: service.employee_id }], payments: [{ method: 'cash', amount: 1000000 }] });
+    await admin.post('/sales', { items: [{ type: 'service', serviceId: service.id, employeeId: service.employee_id, consumption: [] }], payments: [{ method: 'cash', amount: 1000000 }] });
     const category = await db.queryOne("SELECT id FROM expense_categories WHERE slug = 'supplies'");
     await admin.post('/expenses', { categoryId: category.id, expenseDate: today, amount: 25000, description: 'Report test supplies', paymentMethod: 'cash' });
   });
@@ -23,9 +23,11 @@ describe('reports', () => {
     const res = await admin.get(`/reports/sales?from=${today}&to=${today}`);
     expect(res.status).toBe(200);
     const s = res.body.data.summary;
+    // Reports cover the signed-in branch (other tests sell in branches of their own).
+    const branch = await db.queryOne('SELECT id FROM branches WHERE is_default = 1');
     const db1 = await db.queryOne(
-      "SELECT COUNT(*) AS n, SUM(total) AS gross, SUM(tax_amount) AS tax FROM sales WHERE status = 'completed' AND sold_at >= ? AND sold_at < ?",
-      [new Date(res.body.data.period.start), new Date(res.body.data.period.end)],
+      "SELECT COUNT(*) AS n, SUM(total) AS gross, SUM(tax_amount) AS tax FROM sales WHERE branch_id = ? AND status = 'completed' AND sold_at >= ? AND sold_at < ?",
+      [branch.id, new Date(res.body.data.period.start), new Date(res.body.data.period.end)],
     );
     expect(s.count).toBe(Number(db1.n));
     expect(s.gross).toBe(Number(db1.gross));

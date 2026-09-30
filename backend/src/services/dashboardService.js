@@ -5,7 +5,7 @@ const db = require('../config/database');
 const { hasPermission } = require('../middleware/auth');
 const { camelizeRows } = require('../utils/case');
 const { timezone, todayLocal, localDateRange } = require('../utils/time');
-const { salesTotals, expenseTotal, runningCostTotal, commissionEarned, bucketSql, fillSeries, money, change } = require('./reportService');
+const { salesTotals, expenseTotal, runningCostTotal, commissionEarned, costingTotals, bucketSql, fillSeries, money, change } = require('./reportService');
 
 /**
  * Dashboard for the signed-in user. Each section is included only when the
@@ -111,6 +111,37 @@ async function dashboard(ctx) {
       profitAfterCommissionChange: change(afterCommission, lastMonth.grossProfit - lastRunning - lastStaffPay.total),
       commissionEarned: staffPay.total,
       runningCosts: running,
+    };
+
+    // This month's services: price − products → operations → staff / salon profit.
+    const scope = `FROM sale_item_finance f JOIN sales s ON s.id = f.sale_id
+                   WHERE f.branch_id = ? AND s.status = 'completed' AND f.performed_at >= ? AND f.performed_at < ?`;
+    const args = [branchId, monthRange.start, monthRange.end];
+    const [costs, lastCosts, topServices, topStaff, topProducts] = await Promise.all([
+      costingTotals(branchId, monthRange.start, monthRange.end),
+      costingTotals(branchId, lastMonthRange.start, lastMonthRange.end),
+      db.query(`SELECT f.service_name AS name, COUNT(*) AS count, SUM(f.price) AS revenue, SUM(f.salon_profit) AS profit ${scope} GROUP BY f.service_id, f.service_name ORDER BY profit DESC LIMIT 5`, args),
+      db.query(
+        `SELECT e.full_name AS name, COUNT(*) AS services, SUM(sis.commission_amount) AS earnings
+         FROM sale_item_staff sis JOIN employees e ON e.id = sis.employee_id JOIN sale_item_finance f ON f.sale_item_id = sis.sale_item_id JOIN sales s ON s.id = f.sale_id
+         WHERE f.branch_id = ? AND s.status = 'completed' AND f.performed_at >= ? AND f.performed_at < ?
+         GROUP BY e.id, e.full_name ORDER BY earnings DESC LIMIT 5`,
+        args,
+      ),
+      db.query(
+        `SELECT MAX(u.product_name) AS name, u.unit, SUM(u.quantity) AS quantity, SUM(u.total_cost) AS cost
+         FROM sale_item_products u JOIN sale_item_finance f ON f.sale_item_id = u.sale_item_id JOIN sales s ON s.id = f.sale_id
+         WHERE f.branch_id = ? AND s.status = 'completed' AND f.performed_at >= ? AND f.performed_at < ?
+         GROUP BY u.product_id, u.unit ORDER BY cost DESC LIMIT 5`,
+        args,
+      ),
+    ]);
+    result.serviceCosting = {
+      ...costs,
+      change: { sales: change(costs.sales, lastCosts.sales), salonProfit: change(costs.salonProfit, lastCosts.salonProfit), staffEarnings: change(costs.staffEarnings, lastCosts.staffEarnings) },
+      topServices: topServices.map((r) => ({ name: r.name, count: Number(r.count), revenue: money(r.revenue), profit: money(r.profit) })),
+      topStaff: topStaff.map((r) => ({ name: r.name, services: Number(r.services), earnings: money(r.earnings) })),
+      topProducts: topProducts.map((r) => ({ name: r.name, unit: r.unit, quantity: Number(r.quantity), cost: money(r.cost) })),
     };
   }
 
