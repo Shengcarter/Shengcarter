@@ -51,7 +51,7 @@ Other auth endpoints: `GET /auth/me`, `POST /auth/change-password`, `POST /auth/
 
 Each endpoint requires one of the permissions listed. Roles are editable in Settings → Roles & permissions.
 
-`dashboard.view` · `customers.view|create|update|delete` · `appointments.view|view_own|create|update|cancel|complete|checkin` · `services.view|manage` · `employees.view|manage` · `attendance.view|manage|self` · `leave.manage` · `payroll.manage` · `pos.create` · `pos.refund` · `sales.view` · `inventory.view|manage` · `suppliers.view|manage` · `purchases.view|manage` · `expenses.view|manage` · `loyalty.manage` · `reports.view` · `reports.financial` · `reports.export` · `insights.view` · `notifications.send` · `settings.manage` · `users.manage` · `roles.manage` · `branches.manage` · `audit.view` · `backups.manage`
+`dashboard.view` · `customers.view|create|update|delete|import` · `appointments.view|view_own|create|update|cancel|complete|checkin` · `services.view|manage` · `employees.view|manage` · `attendance.view|manage|self` · `leave.manage` · `payroll.manage` · `pos.create` · `pos.refund` · `sales.view|import` · `inventory.view|manage` · `suppliers.view|manage` · `purchases.view|manage` · `expenses.view|manage` · `loyalty.manage` · `reports.view` · `reports.financial` · `reports.export` · `insights.view` · `notifications.send` · `settings.manage` · `users.manage` · `roles.manage` · `branches.manage` · `audit.view` · `backups.manage`
 
 ## Endpoints
 
@@ -160,7 +160,20 @@ Sale body:
 }
 ```
 
-Prices, discounts, tax, loyalty value, change and balance are always calculated by the server from the database; any totals sent by the client are ignored. The whole sale (items, stock, commissions, payments, loyalty points, customer statistics, invoice number) is saved in one database transaction.
+Prices, discounts, tax (none by default: `financial.tax_mode` is `none`), loyalty value, change and balance are always calculated by the server from the database; any totals sent by the client are ignored. The whole sale (items, stock, commissions, payments, loyalty points, customer statistics, invoice number) is saved in one database transaction.
+
+### Imports (Excel / CSV)
+
+| Method | Path | Permission |
+| --- | --- | --- |
+| GET | `/imports/customers/template` · `/imports/sales/template` | `customers.import` / `sales.import` — `.xlsx` template with drop-down lists |
+| POST | `/imports/customers/preview` · `/imports/sales/preview` (multipart `file`) | `customers.import` / `sales.import` — checks the file; nothing is saved |
+| POST | `/imports/customers` · `/imports/sales` (multipart `file`, `skipInvalid`) | `customers.import` / `sales.import` |
+
+Files are `.xlsx` or `.csv` (comma, semicolon or tab separated), up to 5,000 rows and `MAX_UPLOAD_MB`; they are read in memory and never stored. Headers are matched loosely (`Phone`, `Phone number`, `Simu`); dates are read day first (`01/09/2026` is 1 September). The preview returns `{ fileName, columns: { mapped, ignored }, summary, rows: [{ rowNumber, status: ready|skip|error, messages, display }] }`. The import checks the file again and saves all rows in one transaction; if any row has a problem it is refused (422) unless `skipInvalid=true`.
+
+- **Customers**: *Full name* and *Phone* are required; phone numbers already registered (or repeated in the file) are skipped.
+- **Sales**: one row per item; rows with the same *Receipt* number form one sale. *Date* and *Item* (a service or product name, SKU or barcode) are required; a blank *Amount* uses the price list. Customers are matched by phone (new phone + name adds the customer); staff by name or code. Imported sales are marked `isImported`, recorded as paid in full with no tax, and do not change stock, commissions or loyalty points; receipts already imported are skipped. Refunding an imported sale does not return stock.
 
 ### Inventory, suppliers and purchases
 

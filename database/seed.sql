@@ -38,6 +38,7 @@ INSERT INTO permissions (code, module, description) VALUES
   ('customers.create',         'customers',     'Register customers'),
   ('customers.update',         'customers',     'Edit customers and add notes'),
   ('customers.delete',         'customers',     'Delete customers'),
+  ('customers.import',         'customers',     'Import customers from Excel or CSV files'),
   ('appointments.view',        'appointments',  'View all appointments'),
   ('appointments.view_own',    'appointments',  'View appointments assigned to me'),
   ('appointments.create',      'appointments',  'Book appointments'),
@@ -57,6 +58,7 @@ INSERT INTO permissions (code, module, description) VALUES
   ('pos.create',               'pos',           'Use the point of sale and record payments'),
   ('pos.refund',               'pos',           'Refund sales'),
   ('sales.view',               'pos',           'View sales, invoices and payments'),
+  ('sales.import',             'pos',           'Import past sales from Excel or CSV files'),
   ('inventory.view',           'inventory',     'View products and stock'),
   ('inventory.manage',         'inventory',     'Manage products and adjust stock'),
   ('suppliers.view',           'suppliers',     'View suppliers'),
@@ -88,7 +90,7 @@ SELECT r.id, p.id FROM roles r CROSS JOIN permissions p WHERE r.slug = 'super_ad
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN (
   'dashboard.view',
-  'customers.view', 'customers.create', 'customers.update',
+  'customers.view', 'customers.create', 'customers.update', 'customers.import',
   'appointments.view', 'appointments.create', 'appointments.update', 'appointments.cancel',
   'appointments.complete', 'appointments.checkin',
   'services.view', 'employees.view', 'attendance.view', 'attendance.self',
@@ -110,7 +112,7 @@ INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN (
   'dashboard.view',
   'customers.view', 'services.view', 'employees.view', 'attendance.view',
-  'pos.create', 'pos.refund', 'sales.view',
+  'pos.create', 'pos.refund', 'sales.view', 'sales.import',
   'expenses.view', 'expenses.manage', 'payroll.manage',
   'inventory.view', 'suppliers.view', 'purchases.view',
   'reports.view', 'reports.financial', 'reports.export', 'insights.view'
@@ -186,7 +188,7 @@ INSERT IGNORE INTO settings (setting_key, group_name, setting_value) VALUES
   ('financial.currency_code',      'financial', JSON_QUOTE('TZS')),
   ('financial.currency_decimals',  'financial', CAST('0' AS JSON)),
   ('financial.currency_locale',    'financial', JSON_QUOTE('en-TZ')),
-  ('financial.tax_mode',           'financial', JSON_QUOTE('exclusive')),
+  ('financial.tax_mode',           'financial', JSON_QUOTE('none')),
   ('financial.tax_rate',           'financial', CAST('18' AS JSON)),
   ('financial.tax_label',          'financial', JSON_QUOTE('VAT')),
   ('financial.invoice_prefix',     'financial', JSON_QUOTE('INV-')),

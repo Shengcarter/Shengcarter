@@ -32,11 +32,11 @@ More documentation: [Deployment guide](docs/DEPLOYMENT.md) · [Architecture](doc
 | Module | What it does |
 | --- | --- |
 | **Dashboard** | Today's and month-to-date sales with comparisons, profit after wages, balances owed, 30-day revenue, today's appointments, top services and stylists, payment mix, stock alerts, birthdays, team attendance and top insights. Stylists see "My day" with their services, commission and clock in/out. |
-| **Customers** | Profiles, visit history, purchases, payments, notes, loyalty points and tiers, photo, marketing preferences; duplicate-safe phone numbers. |
+| **Customers** | Profiles, visit history, purchases, payments, notes, loyalty points and tiers, photo, marketing preferences; duplicate-safe phone numbers; **import a customer list from Excel or CSV**. |
 | **Appointments** | Day / week / month / list calendars with drag-and-drop rescheduling, stylist availability, working hours and leave, server-side double-booking prevention, reminders, QR code check-in. |
 | **Services** | Categories, prices, durations, commission rates, which staff perform which service. |
 | **Employees** | Profiles, schedules, services, attendance (clock in/out, lateness), leave requests and approval, commissions, salary preparation and payment, performance. |
-| **Point of sale** | Services and products (with barcode scanning), discounts, loyalty redemption, inclusive or exclusive tax, split payments (cash, mobile money, card, bank), change, balances, refunds, thermal (80 mm) receipts and A4 invoices (print or PDF), appointment checkout. |
+| **Point of sale** | Services and products (with barcode scanning), discounts, loyalty redemption, no tax by default (the customer pays exactly the listed price; inclusive or exclusive tax can be switched on in Settings → Financial), split payments (cash, mobile money, card, bank), change, balances, refunds, thermal (80 mm) receipts and A4 invoices (print or PDF), appointment checkout; **import past sales from Excel or CSV**. |
 | **Inventory** | Products, stock ledger (purchases, sales, refunds, counts, damage, salon use), low-stock alerts, valuation. |
 | **Suppliers & purchases** | Supplier records, purchase orders, receiving stock, supplier payments and balances. |
 | **Expenses** | Categories, receipts (image/PDF), vendors; salary payments are recorded automatically. |
@@ -44,6 +44,8 @@ More documentation: [Deployment guide](docs/DEPLOYMENT.md) · [Architecture](doc
 | **Insights** | Built-in analysis of trends, risks and opportunities (works offline), with an optional AI-written summary. |
 | **Messaging** | SMS, WhatsApp and email (appointment confirmations, reminders, receipts, promotions to opted-in customers, win-back and birthday campaigns) with a delivery log. |
 | **Administration** | Users, roles and permissions, branches, business/financial/system settings, integrations, loyalty programme, activity (audit) log, backups. |
+
+**Bringing in records kept in Excel:** on the **Customers** page and the **Sales history** page, choose **Import** and pick an Excel (`.xlsx`) or CSV file — or first **Download template**, a ready-made sheet with the right columns and drop-down lists of your services, products and staff. The system reads column names loosely (English or Swahili, e.g. *Phone*, *Simu*), then shows every row as *Ready*, *Skipped* (already in the system) or *Problem* (with the reason) before anything is saved. Nothing is imported until you confirm; you can import only the good rows, and the import is all-or-nothing. Imported sales keep their original date and exact amounts, are marked *Imported*, and do not change stock, commissions or loyalty points; importing the same file again adds nothing twice.
 
 **Technology:** React 19, Vite, Tailwind CSS, Framer Motion, TanStack Query, React Hook Form + Zod, Recharts · Node.js (Express 5) REST API with JWT authentication · MySQL 8.
 
@@ -325,9 +327,9 @@ Four roles are created by default; every permission can be changed in **Settings
 | Role | Can do |
 | --- | --- |
 | **Super Admin** | Everything: all modules, settings, integrations, users, roles, branches, backups, activity log, reports and exports. |
-| **Receptionist** | Front desk: customers (create/edit), appointments (book, edit, cancel, check in, complete), point of sale and sales history, services, staff list and attendance view, inventory view. |
+| **Receptionist** | Front desk: customers (create/edit/import), appointments (book, edit, cancel, check in, complete), point of sale and sales history, services, staff list and attendance view, inventory view. |
 | **Stylist / Barber** | Own appointments only (view, check in, complete), services, own attendance (clock in/out) and "My day" dashboard with own services and commission. |
-| **Accountant** | Sales, payments and refunds, expenses, payroll and commissions, inventory/supplier/purchase views, customers and staff views, all reports (including profit & loss), exports and insights. |
+| **Accountant** | Sales, payments and refunds, importing past sales, expenses, payroll and commissions, inventory/supplier/purchase views, customers and staff views, all reports (including profit & loss), exports and insights. |
 
 Security built in: bcrypt-hashed passwords (8+ characters with letters and numbers), account lockout after repeated failed logins, forced password change for new accounts and after an administrator reset, 15-minute access tokens with rotating refresh tokens (reuse detection signs the session out everywhere), branch isolation, and an audit log of sign-ins and every important change. Details: [docs/SECURITY.md](docs/SECURITY.md).
 

@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Banknote, Hourglass, ReceiptText, ShoppingBag, TrendingUp } from 'lucide-react';
-import { ButtonLink, Card, DataTable, DateRange, EmptyState, FilterGroup, FilterSelect, PageHeader, Pagination, SearchInput, StatCard, StatusBadge } from '../../components/ui';
+import { ArrowLeft, Banknote, FileUp, Hourglass, ReceiptText, ShoppingBag, TrendingUp } from 'lucide-react';
+import { Badge, Button, ButtonLink, Card, DataTable, DateRange, EmptyState, FilterGroup, FilterSelect, PageHeader, Pagination, SearchInput, StatCard, StatusBadge } from '../../components/ui';
 import { formatDateTime, formatMoney, formatNumber, titleCase, todayISO } from '../../utils/format';
 import { usePermission, useDocumentTitle } from '../../hooks';
 import { PAYMENT_METHODS, useSales } from './api';
+import { ImportDialog } from '../../components/ImportDialog';
 
 export default function SalesPage() {
   useDocumentTitle('Sales history');
   const can = usePermission();
   const navigate = useNavigate();
+  const [importing, setImporting] = useState(false);
   const [params, setParams] = useState({ page: 1, limit: 20, search: '', from: todayISO().slice(0, 8) + '01', to: todayISO(), status: '', paymentStatus: '', method: '' });
   const sales = useSales(params);
   const set = (patch) => setParams((p) => ({ ...p, page: 1, ...patch }));
@@ -21,7 +23,39 @@ export default function SalesPage() {
       <PageHeader
         title="Sales history"
         description="Invoices, receipts, payments and refunds."
-        actions={can('pos.create') ? <ButtonLink to="/pos" icon={ShoppingBag}>New sale</ButtonLink> : null}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {can('sales.import') ? <Button variant="secondary" icon={FileUp} onClick={() => setImporting(true)}>Import</Button> : null}
+            {can('pos.create') ? <ButtonLink to="/pos" icon={ShoppingBag}>New sale</ButtonLink> : null}
+          </div>
+        }
+      />
+      <ImportDialog
+        open={importing}
+        onClose={() => setImporting(false)}
+        type="sales"
+        title="Import past sales"
+        noun={['sale', 'sales']}
+        intro={
+          <>
+            <p>Bring in sales you recorded elsewhere, for example in an Excel sheet before using this system. One row per service or product; rows with the same receipt number become one sale.</p>
+            <p>Services, products and staff are matched by name, and customers by phone number (a new phone with a name adds the customer).</p>
+          </>
+        }
+        notice="Imported sales count in reports, staff performance and customer history. They do not change stock, earn loyalty points or create staff commission, because that already happened outside the system. Sales with a receipt number that was imported before are skipped."
+        columns={[
+          { key: 'date', header: 'Date' },
+          { key: 'receipt', header: 'Receipt' },
+          { key: 'item', header: 'Item' },
+          { key: 'customer', header: 'Customer' },
+          { key: 'amount', header: 'Amount', align: 'right', render: (d) => (d.amount === null ? '—' : formatMoney(d.amount)) },
+        ]}
+        summaryTiles={(s) => [
+          { label: 'Sales', value: formatNumber(s.sales) },
+          { label: 'Total amount', value: formatMoney(s.total) },
+          { label: 'New customers', value: formatNumber(s.newCustomers) },
+        ]}
+        invalidate={[['sales'], ['customers'], ['dashboard'], ['reports']]}
       />
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Transactions" icon={ReceiptText} value={formatNumber(summary?.count)} loading={sales.isPending} />
@@ -59,7 +93,7 @@ export default function SalesPage() {
           onRowClick={(s) => navigate(`/pos/sales/${s.id}`)}
           empty={<EmptyState icon={ReceiptText} title="No transactions found" description="Try a wider date range." />}
           columns={[
-            { key: 'invoiceNumber', header: 'Invoice', primary: true, render: (s) => <div><p className="font-medium">{s.invoiceNumber}</p><p className="text-xs text-muted">{formatDateTime(s.soldAt)}</p></div> },
+            { key: 'invoiceNumber', header: 'Invoice', primary: true, render: (s) => <div><p className="flex items-center gap-1.5 font-medium">{s.invoiceNumber}{s.isImported ? <Badge tone="info">Imported</Badge> : null}</p><p className="text-xs text-muted">{formatDateTime(s.soldAt)}</p></div> },
             { key: 'customerName', header: 'Customer', render: (s) => s.customerName || <span className="text-muted">Walk-in</span> },
             { key: 'methods', header: 'Paid by', hideOnMobile: true, render: (s) => (s.methods ? s.methods.split(',').map(titleCase).join(', ') : '—') },
             { key: 'cashierName', header: 'Cashier', hideOnMobile: true },

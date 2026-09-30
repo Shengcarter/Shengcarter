@@ -134,7 +134,7 @@ const DEFAULTS = {
   'financial.currency_code': 'TZS',
   'financial.currency_decimals': 0,
   'financial.currency_locale': 'en-TZ',
-  'financial.tax_mode': 'exclusive',
+  'financial.tax_mode': 'none',
   'financial.tax_rate': 18,
   'financial.tax_label': 'VAT',
   'financial.invoice_prefix': 'INV-',

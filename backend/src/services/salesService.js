@@ -395,7 +395,7 @@ async function list(filters, ctx) {
   const from = `FROM sales s LEFT JOIN customers c ON c.id = s.customer_id JOIN users u ON u.id = s.cashier_id WHERE ${where.join(' AND ')}`;
   const result = await paginate({
     select: `s.id, s.invoice_number, s.receipt_number, s.sold_at, s.subtotal, s.discount_amount, s.tax_amount, s.total, s.amount_paid,
-             s.balance_due, s.status, s.payment_status, s.customer_id, c.full_name AS customer_name, u.full_name AS cashier_name,
+             s.balance_due, s.status, s.payment_status, s.is_imported, s.customer_id, c.full_name AS customer_name, u.full_name AS cashier_name,
              (SELECT GROUP_CONCAT(DISTINCT p.method) FROM payments p WHERE p.sale_id = s.id AND p.type = 'payment') AS methods,
              (SELECT COUNT(*) FROM sale_items si WHERE si.sale_id = s.id) AS item_count`,
     from,
@@ -514,7 +514,8 @@ async function refundSale(saleId, { reason }, ctx, options = {}) {
     if (!sale || sale.branch_id !== ctx.branchId) throw ApiError.notFound('Sale not found');
     if (sale.status === 'refunded') throw ApiError.conflict('This sale has already been refunded');
 
-    const items = await db.query("SELECT product_id, quantity, unit_cost FROM sale_items WHERE sale_id = ? AND item_type = 'product'", [saleId], conn);
+    // Imported sales never took stock out, so their refund puts none back.
+    const items = sale.is_imported ? [] : await db.query("SELECT product_id, quantity, unit_cost FROM sale_items WHERE sale_id = ? AND item_type = 'product'", [saleId], conn);
     for (const item of items) {
       await inventoryService.changeStock(conn, {
         productId: item.product_id, branchId: sale.branch_id, change: item.quantity, type: 'refund', unitCost: item.unit_cost,
@@ -607,4 +608,4 @@ async function appointmentCheckout(appointmentId, ctx) {
   };
 }
 
-module.exports = { createSale, quote, getById, list, listPayments, recordPayment, refundSale, appointmentCheckout };
+module.exports = { createSale, quote, getById, list, listPayments, recordPayment, refundSale, appointmentCheckout, nextDocumentNumbers };

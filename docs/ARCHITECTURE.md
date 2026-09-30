@@ -98,7 +98,7 @@ scripts/                configure-env.js (first-run .env), linux/ shell scripts
 ## 4. Core rules
 
 ### Money
-All amounts are `DECIMAL(14,2)` in MySQL and calculated with **decimal.js** (`utils/money.js`) — never JavaScript floating point. The server recalculates every price, discount, tax, total, change and balance from the database; totals sent by the browser are ignored. The POS formula lives in one pure, unit-tested module (`services/pricing.js`): line amounts are rounded to the currency's decimals, invoice discounts and loyalty redemptions are allocated across lines (the last line absorbs the rounding remainder, so line amounts always add up to the total exactly), and tax is inclusive or exclusive as configured in Settings. Receipts, invoices and reports read these stored figures, so they always agree.
+All amounts are `DECIMAL(14,2)` in MySQL and calculated with **decimal.js** (`utils/money.js`) — never JavaScript floating point. The server recalculates every price, discount, tax, total, change and balance from the database; totals sent by the browser are ignored. The POS formula lives in one pure, unit-tested module (`services/pricing.js`): line amounts are rounded to the currency's decimals, invoice discounts and loyalty redemptions are allocated across lines (the last line absorbs the rounding remainder, so line amounts always add up to the total exactly), and tax is off by default (the listed price is what the customer pays) or inclusive or exclusive as configured in Settings. Receipts, invoices and reports read these stored figures, so they always agree.
 
 ### Time
 The database session time zone is UTC and every `DATETIME` is stored in UTC. The business time zone (Settings, default `Africa/Dar_es_Salaam`) is applied with luxon when interpreting user input (e.g. "today", a booking at 14:00) and in SQL with `CONVERT_TZ(column, '+00:00', <validated offset>)` when grouping reports by local day. The browser formats with the same business time zone, not the device's.
@@ -142,7 +142,7 @@ See [SECURITY.md](SECURITY.md) for the complete list of controls.
 
 ## 6. Permissions
 
-44 permission codes in 13 modules (`module.action`, e.g. `pos.refund`, `reports.financial`, `appointments.view_own`). Roles are sets of permissions editable in *Settings → Roles & permissions*; the Super Admin role always has all of them. The web app hides navigation and buttons the user cannot use, but **the API is the enforcement point** — every route declares its permissions, and the tests check each default role against the modules it may and may not reach, plus record-level rules (a stylist's own appointments, branch isolation).
+46 permission codes in 13 modules (`module.action`, e.g. `pos.refund`, `reports.financial`, `appointments.view_own`). Roles are sets of permissions editable in *Settings → Roles & permissions*; the Super Admin role always has all of them. The web app hides navigation and buttons the user cannot use, but **the API is the enforcement point** — every route declares its permissions, and the tests check each default role against the modules it may and may not reach, plus record-level rules (a stylist's own appointments, branch isolation).
 
 To add a permission: insert it in `database/seed.sql` (and a migration for existing installs), grant it to roles there, use `requirePermission('module.action')` on the route, and add it to the navigation guard in `frontend/src/routes`.
 
@@ -205,7 +205,7 @@ Profit & loss is on a cash basis: net sales − cost of goods sold (purchase pri
 
 | Suite | Tool | Covers |
 | --- | --- | --- |
-| `backend/tests/*.test.js` | Jest + Supertest | authentication and sessions, permissions per role, customer CRUD, appointment conflicts, POS sales/payments/refunds and concurrency, inventory ledger, reports and exports, financial calculations, backups |
+| `backend/tests/*.test.js` | Jest + Supertest | authentication and sessions, permissions per role, customer CRUD, appointment conflicts, POS sales/payments/refunds and concurrency, Excel/CSV imports, inventory ledger, reports and exports, financial calculations, backups |
 | `frontend/src/**/*.test.js` | Vitest | formatting and report period helpers |
 
 Backend tests create a throw-away database `zola_stylish_test` (dropped and recreated per run) using the same schema, migrations and seed as production. Run `npm test` in `backend/` and `frontend/`.
