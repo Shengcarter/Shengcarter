@@ -17,7 +17,8 @@ const inventoryService = require('./inventoryService');
  *   • Gross sales include tax; net sales = gross − tax (tax is owed to the
  *     revenue authority, not income). COGS is the recorded cost of products
  *     sold. Net profit = net sales − COGS − recorded expenses (cash basis:
- *     salaries count when paid; unpaid commissions are shown as a note).
+ *     staff commission counts when paid out; unpaid commission is a note).
+ *     Profit after commission counts commission when it is earned instead.
  *   • Every report is scoped to the current branch unless stated otherwise.
  */
 
@@ -156,10 +157,11 @@ async function expenseTotal(branchId, from, to) {
 }
 
 /**
- * Running costs: every expense except salary payments made through Payroll.
- * Those follow the payday, so comparing periods with them swings wildly;
- * wages are counted as earned instead (wagesEarned). Salaries a salon records
- * by hand as ordinary expenses stay in, so nothing is lost or counted twice.
+ * Running costs: every expense except commission payouts made through
+ * Employees → Commission payouts. Those follow the payday, so comparing
+ * periods with them swings wildly; commission is counted as earned instead
+ * (commissionEarned). Staff pay a salon records by hand as an ordinary expense
+ * stays in, so nothing is lost or counted twice.
  */
 async function runningCostTotal(branchId, from, to) {
   const row = await db.queryOne(
@@ -172,26 +174,22 @@ async function runningCostTotal(branchId, from, to) {
 }
 
 /**
- * Wages earned by staff in a date range, whenever they are paid: salaries for
- * the days worked (from the salary record covering each day, otherwise the
- * employee's monthly salary spread over that month's days) plus commission
- * earned. Only days up to today count.
+ * Staff pay earned in a date range, whenever it is paid out: commission
+ * earned (refunded sales excluded) plus payout bonuses minus deductions,
+ * spread over the days of each payout's period (older records may also carry
+ * a base salary). Only days up to today count.
  */
-async function wagesEarned(branchId, from, to) {
+async function commissionEarned(branchId, from, to) {
   const through = to < todayLocal() ? to : todayLocal();
-  if (through < from) return { salaries: 0, commission: 0, total: 0, through };
+  if (through < from) return { commission: 0, bonuses: 0, total: 0, through };
   const zone = timezone();
   const range = localDateRange(from, through);
 
-  const [records, employees, commission] = await Promise.all([
+  const [records, commission] = await Promise.all([
     db.query(
-      `SELECT employee_id, period_start, period_end, base_salary + bonus - deductions AS pay
-       FROM salary_records WHERE branch_id = ? AND period_start <= ? AND period_end >= ?`,
+      `SELECT period_start, period_end, base_salary + bonus - deductions AS extra
+       FROM salary_records WHERE branch_id = ? AND period_start <= ? AND period_end >= ? AND (base_salary + bonus - deductions) <> 0`,
       [branchId, through, from],
-    ),
-    db.query(
-      "SELECT id, salary, employment_date FROM employees WHERE branch_id = ? AND status IN ('active', 'on_leave') AND salary > 0",
-      [branchId],
     ),
     db.queryOne(
       "SELECT COALESCE(SUM(amount), 0) AS total FROM commissions WHERE branch_id = ? AND status <> 'reversed' AND earned_at >= ? AND earned_at < ?",
@@ -205,25 +203,12 @@ async function wagesEarned(branchId, from, to) {
     const end = a2 < b2 ? a2 : b2;
     return end < start ? 0 : Math.round(day(end).diff(day(start), 'days').days) + 1;
   };
-
-  let salaries = 0;
-  const covered = new Map();
+  let bonuses = 0;
   for (const r of records) {
     const recordDays = Math.round(day(r.period_end).diff(day(r.period_start), 'days').days) + 1;
-    salaries += (Number(r.pay) * overlapDays(r.period_start, r.period_end, from, through)) / recordDays;
-    if (!covered.has(r.employee_id)) covered.set(r.employee_id, []);
-    covered.get(r.employee_id).push([r.period_start, r.period_end]);
+    bonuses += (Number(r.extra) * overlapDays(r.period_start, r.period_end, from, through)) / recordDays;
   }
-  // Days no salary record covers yet (the current month, before payroll is prepared).
-  for (const e of employees) {
-    const periods = covered.get(e.id) || [];
-    const first = e.employment_date && e.employment_date > from ? e.employment_date : from;
-    for (let d = day(first); d <= day(through); d = d.plus({ days: 1 })) {
-      const iso = d.toISODate();
-      if (!periods.some(([s, t]) => s <= iso && iso <= t)) salaries += Number(e.salary) / d.daysInMonth;
-    }
-  }
-  return { salaries: money(salaries), commission: money(commission.total), total: money(salaries + Number(commission.total)), through };
+  return { commission: money(commission.total), bonuses: money(bonuses), total: money(bonuses + Number(commission.total)), through };
 }
 
 async function lineTotals(branchId, start, end, itemType, groupColumn) {
@@ -265,9 +250,10 @@ async function sales(params, ctx) {
     [branchId, period.start, period.end],
   );
 
+  // A service done by several people counts for each, with their equal share of its value.
   const staff = await db.query(
-    `SELECT e.id, e.full_name AS name, SUM(i.quantity) AS services, SUM(i.net_amount) AS revenue, SUM(i.commission_amount) AS commission
-     FROM sale_items i JOIN sales s ON s.id = i.sale_id JOIN employees e ON e.id = i.employee_id
+    `SELECT e.id, e.full_name AS name, SUM(i.quantity) AS services, SUM(sis.revenue_share) AS revenue, SUM(sis.commission_amount) AS commission
+     FROM sale_item_staff sis JOIN sale_items i ON i.id = sis.sale_item_id JOIN sales s ON s.id = i.sale_id JOIN employees e ON e.id = sis.employee_id
      WHERE s.branch_id = ? AND s.status = 'completed' AND s.sold_at >= ? AND s.sold_at < ? AND i.item_type = 'service'
      GROUP BY e.id, e.full_name ORDER BY revenue DESC`,
     [branchId, period.start, period.end],
@@ -531,15 +517,24 @@ async function staff(params, ctx) {
   const ids = employees.map((e) => e.id);
 
   const [lines, commissions, appointments, attendance, schedules, leave] = await Promise.all([
-    lineTotals(branchId, period.start, period.end, 'service', 'i.employee_id'),
+    // Each person's share of the services they performed (shared services are split equally).
+    db.query(
+      `SELECT sis.employee_id AS id, SUM(i.quantity) AS quantity, COUNT(DISTINCT i.sale_id) AS sales, SUM(sis.revenue_share) AS revenue,
+              0 AS cost, SUM(sis.commission_amount) AS commission
+       FROM sale_item_staff sis JOIN sale_items i ON i.id = sis.sale_item_id JOIN sales s ON s.id = i.sale_id
+       WHERE s.branch_id = ? AND s.status = 'completed' AND s.sold_at >= ? AND s.sold_at < ? AND i.item_type = 'service'
+       GROUP BY sis.employee_id`,
+      [branchId, period.start, period.end],
+    ),
     db.query(
       "SELECT employee_id AS id, SUM(amount) AS total, SUM(status = 'paid') AS paid_count FROM commissions WHERE branch_id = ? AND status <> 'reversed' AND earned_at >= ? AND earned_at < ? GROUP BY employee_id",
       [branchId, period.start, period.end],
     ),
     db.query(
-      `SELECT employee_id AS id, COUNT(*) AS total, SUM(status = 'completed') AS completed, SUM(status = 'cancelled') AS cancelled,
-              SUM(status = 'no_show') AS no_show, SUM(CASE WHEN status IN ('cancelled','no_show') THEN 0 ELSE total_duration END) AS minutes
-       FROM appointments WHERE branch_id = ? AND start_time >= ? AND start_time < ? GROUP BY employee_id`,
+      `SELECT ast.employee_id AS id, COUNT(*) AS total, SUM(a.status = 'completed') AS completed, SUM(a.status = 'cancelled') AS cancelled,
+              SUM(a.status = 'no_show') AS no_show, SUM(CASE WHEN a.status IN ('cancelled','no_show') THEN 0 ELSE a.total_duration END) AS minutes
+       FROM appointment_staff ast JOIN appointments a ON a.id = ast.appointment_id
+       WHERE a.branch_id = ? AND a.start_time >= ? AND a.start_time < ? GROUP BY ast.employee_id`,
       [branchId, period.start, period.end],
     ),
     db.query(
@@ -718,11 +713,11 @@ async function expenses(params, ctx) {
     'SELECT payment_method AS method, SUM(amount) AS total FROM expenses WHERE branch_id = ? AND expense_date BETWEEN ? AND ? GROUP BY payment_method ORDER BY total DESC',
     [branchId, period.from, period.to],
   );
-  const [salesSummary, running, prevRunning, wages, runningTop] = await Promise.all([
+  const [salesSummary, running, prevRunning, staffPay, runningTop] = await Promise.all([
     salesTotals(branchId, period.start, period.end),
     runningCostTotal(branchId, period.from, period.to),
     runningCostTotal(branchId, period.previous.from, period.previous.to),
-    wagesEarned(branchId, period.from, period.to),
+    commissionEarned(branchId, period.from, period.to),
     db.queryOne(
       `SELECT c.name AS category FROM expenses e JOIN expense_categories c ON c.id = e.category_id
        WHERE e.branch_id = ? AND e.expense_date BETWEEN ? AND ? AND NOT EXISTS (SELECT 1 FROM salary_records r WHERE r.expense_id = e.id)
@@ -745,8 +740,8 @@ async function expenses(params, ctx) {
       previousRunningCosts: prevRunning,
       runningCostsChange: change(running, prevRunning),
       largestRunningCategory: runningTop?.category || null,
-      wagesEarned: wages.total,
-      costShareOfSales: pct(running + wages.total, salesSummary.net),
+      commissionEarned: staffPay.total,
+      costShareOfSales: pct(running + staffPay.total, salesSummary.net),
     },
     series: fillSeries(period, series, { total: 'money' }),
     categories: categories.map((c) => ({ category: c.category, count: Number(c.count), total: money(c.total), share: pct(c.total, current.total) })),
@@ -792,15 +787,15 @@ async function profit(params, ctx) {
   );
   const netProfit = money(current.grossProfit - exp.total);
   const prevProfit = money(previous.grossProfit - prevExp.total);
-  // Cash profit swings with the payday; this view counts wages as earned.
-  const [running, prevRunning, wages, prevWages] = await Promise.all([
+  // Cash profit swings with the payday; this view counts commission as earned.
+  const [running, prevRunning, staffPay, prevStaffPay] = await Promise.all([
     runningCostTotal(branchId, period.from, period.to),
     runningCostTotal(branchId, period.previous.from, period.previous.to),
-    wagesEarned(branchId, period.from, period.to),
-    wagesEarned(branchId, period.previous.from, period.previous.to),
+    commissionEarned(branchId, period.from, period.to),
+    commissionEarned(branchId, period.previous.from, period.previous.to),
   ]);
-  const profitAfterWages = money(current.grossProfit - running - wages.total);
-  const prevProfitAfterWages = money(previous.grossProfit - prevRunning - prevWages.total);
+  const profitAfterCommission = money(current.grossProfit - running - staffPay.total);
+  const prevProfitAfterCommission = money(previous.grossProfit - prevRunning - prevStaffPay.total);
   return {
     period,
     summary: {
@@ -817,14 +812,14 @@ async function profit(params, ctx) {
       change: { netSales: change(current.net, previous.net), expenses: change(exp.total, prevExp.total), netProfit: change(netProfit, prevProfit) },
       unpaidCommission: money(unpaidCommission.total),
       outstanding: current.outstanding,
-      afterWages: {
+      afterCommission: {
         runningCosts: running,
-        salaries: wages.salaries,
-        commission: wages.commission,
-        through: wages.through,
-        profit: profitAfterWages,
-        margin: pct(profitAfterWages, current.net),
-        change: change(profitAfterWages, prevProfitAfterWages),
+        commission: staffPay.commission,
+        bonuses: staffPay.bonuses,
+        through: staffPay.through,
+        profit: profitAfterCommission,
+        margin: pct(profitAfterCommission, current.net),
+        change: change(profitAfterCommission, prevProfitAfterCommission),
       },
     },
     series,
@@ -876,4 +871,4 @@ const REPORTS = {
   branches: { permission: ['reports.financial', 'branches.manage'], all: true, build: branches, title: 'Branch comparison' },
 };
 
-module.exports = { REPORTS, resolvePeriod, salesTotals, expenseTotal, runningCostTotal, wagesEarned, bucketSql, local, fillSeries, money, pct, change };
+module.exports = { REPORTS, resolvePeriod, salesTotals, expenseTotal, runningCostTotal, commissionEarned, bucketSql, local, fillSeries, money, pct, change };

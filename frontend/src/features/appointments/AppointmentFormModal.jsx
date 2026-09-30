@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Clock, Search } from 'lucide-react';
+import { Clock, Search, Users } from 'lucide-react';
 import { Avatar, Button, Modal, Select, Spinner, Textarea } from '../../components/ui';
 import { cn } from '../../utils/cn';
 import { formatDuration, formatMoney, formatTime, localToISO, todayISO, toBusinessZone } from '../../utils/format';
@@ -23,7 +23,7 @@ function initialState(appointment, preset) {
     return {
       customer: { id: appointment.customerId, fullName: appointment.customerName, phone: appointment.customerPhone, code: appointment.customerCode },
       serviceIds: appointment.services.map((s) => s.serviceId),
-      employeeId: appointment.employeeId,
+      employeeIds: appointment.staff?.length ? appointment.staff.map((m) => m.id) : [appointment.employeeId],
       date: start.toISODate(),
       time: start.toFormat('HH:mm'),
       source: appointment.source,
@@ -34,7 +34,7 @@ function initialState(appointment, preset) {
   return {
     customer: preset?.customer || null,
     serviceIds: [],
-    employeeId: preset?.employeeId || null,
+    employeeIds: preset?.employeeId ? [preset.employeeId] : [],
     date: preset?.date || todayISO(),
     time: preset?.time || null,
     source: 'phone',
@@ -51,6 +51,7 @@ export function AppointmentFormModal({ open, onClose, appointment, preset, onSav
   const [serviceSearch, setServiceSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  const [showAllStaff, setShowAllStaff] = useState(false);
   const services = useServices({ status: 'active' }, { enabled: open });
   const employees = useEmployeeOptions({ bookable: true }, { enabled: open });
 
@@ -59,6 +60,7 @@ export function AppointmentFormModal({ open, onClose, appointment, preset, onSav
       setForm(initialState(appointment, preset));
       setErrors({});
       setServiceSearch('');
+      setShowAllStaff(false);
     }
   }, [open, appointment, preset]);
 
@@ -67,18 +69,21 @@ export function AppointmentFormModal({ open, onClose, appointment, preset, onSav
   const totalDuration = selectedServices.reduce((sum, s) => sum + s.durationMinutes, 0);
   const totalPrice = selectedServices.reduce((sum, s) => sum + Number(s.price), 0);
 
-  // Only stylists who perform every chosen service.
+  // Staff who perform at least one chosen service (or everyone, for helpers).
+  const performsAny = (e) => form.serviceIds.some((id) => e.serviceIds.includes(id));
   const eligible = useMemo(
-    () => (employees.data || []).filter((e) => form.serviceIds.every((id) => e.serviceIds.includes(id))),
-    [employees.data, form.serviceIds],
+    () => (employees.data || []).filter((e) => showAllStaff || performsAny(e) || form.employeeIds.includes(e.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [employees.data, form.serviceIds, showAllStaff, form.employeeIds],
   );
-  useEffect(() => {
-    if (form.employeeId && employees.data && !eligible.some((e) => e.id === form.employeeId)) set({ employeeId: null, time: null });
-  }, [eligible, employees.data, form.employeeId]);
+  const team = form.employeeIds.map((id) => (employees.data || []).find((e) => e.id === id)).filter(Boolean);
+  // Each service needs someone in the team who performs it.
+  const uncovered = selectedServices.filter((s) => team.length && !team.some((e) => e.serviceIds.includes(s.id)));
+  const toggleStaff = (id) => set({ employeeIds: form.employeeIds.includes(id) ? form.employeeIds.filter((x) => x !== id) : [...form.employeeIds, id], time: null });
 
   const availability = useAvailability(
-    { employeeId: form.employeeId, date: form.date, serviceIds: form.serviceIds, excludeId: appointment?.id },
-    open && Boolean(form.employeeId && form.date && form.serviceIds.length),
+    { employeeIds: form.employeeIds, date: form.date, serviceIds: form.serviceIds, excludeId: appointment?.id },
+    open && Boolean(form.employeeIds.length && form.date && form.serviceIds.length),
   );
 
   const toggleService = (id) => {
@@ -95,7 +100,8 @@ export function AppointmentFormModal({ open, onClose, appointment, preset, onSav
     const next = {};
     if (!form.customer) next.customer = 'Choose a customer';
     if (!form.serviceIds.length) next.services = 'Choose at least one service';
-    if (!form.employeeId) next.employee = 'Choose a stylist';
+    if (!form.employeeIds.length) next.employee = 'Choose who will do it';
+    else if (uncovered.length) next.employee = `Nobody chosen performs ${uncovered.map((s) => s.name).join(', ')}`;
     if (!form.time) next.time = 'Choose a time';
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -103,7 +109,7 @@ export function AppointmentFormModal({ open, onClose, appointment, preset, onSav
     setSaving(true);
     const body = {
       customerId: form.customer.id,
-      employeeId: form.employeeId,
+      employeeIds: form.employeeIds,
       serviceIds: form.serviceIds,
       startTime: localToISO(form.date, form.time),
       notes: form.notes || null,
@@ -123,7 +129,7 @@ export function AppointmentFormModal({ open, onClose, appointment, preset, onSav
       for (const e of error.errors || []) {
         if (e.field === 'startTime') fieldErrors.time = e.message;
         if (e.field === 'serviceIds') fieldErrors.services = e.message;
-        if (e.field === 'employeeId') fieldErrors.employee = e.message;
+        if (e.field === 'employeeId' || e.field === 'employeeIds') fieldErrors.employee = e.message;
         if (e.field === 'customerId') fieldErrors.customer = e.message;
       }
       setErrors(fieldErrors);
@@ -205,37 +211,58 @@ export function AppointmentFormModal({ open, onClose, appointment, preset, onSav
           </div>
 
           <div>
-            <p className="mb-1.5 text-sm font-medium">Stylist</p>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <p className="text-sm font-medium">Staff</p>
+              {form.serviceIds.length ? (
+                <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={() => setShowAllStaff((v) => !v)}>
+                  {showAllStaff ? 'Only staff who do these services' : 'Show all staff (helpers)'}
+                </button>
+              ) : null}
+            </div>
             {!form.serviceIds.length ? (
               <p className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-muted">Choose services to see who can perform them.</p>
             ) : !eligible.length ? (
-              <p className="rounded-xl border border-dashed border-amber-500/40 px-4 py-6 text-center text-sm text-warning">No single stylist performs all selected services. Book them as separate appointments.</p>
+              <p className="rounded-xl border border-dashed border-amber-500/40 px-4 py-6 text-center text-sm text-warning">Nobody performs the selected services. Assign them under Services, or show all staff.</p>
             ) : (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {eligible.map((e) => (
-                  <button
-                    key={e.id}
-                    type="button"
-                    onClick={() => set({ employeeId: e.id, time: null })}
-                    aria-pressed={form.employeeId === e.id}
-                    className={cn('flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left', form.employeeId === e.id ? 'border-brand-500 bg-brand-500/10' : 'border-line hover:border-brand-500/40')}
-                  >
-                    <Avatar name={e.fullName} src={e.photo} size="sm" />
-                    <span className="min-w-0">
-                      <span className="flex items-center gap-1.5 text-sm font-medium"><span className="size-2 rounded-full" style={{ background: e.calendarColor }} aria-hidden />{e.fullName}</span>
-                      <span className="block truncate text-xs text-muted">{e.jobTitle}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <>
+                <p className="mb-2 text-xs text-muted">Choose one person, or several for a service done together. Everyone chosen is booked for the whole time, and the commission is shared equally.</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {eligible.map((e) => {
+                    const position = form.employeeIds.indexOf(e.id);
+                    const selected = position !== -1;
+                    return (
+                      <button
+                        key={e.id}
+                        type="button"
+                        onClick={() => toggleStaff(e.id)}
+                        aria-pressed={selected}
+                        className={cn('flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left', selected ? 'border-brand-500 bg-brand-500/10' : 'border-line hover:border-brand-500/40')}
+                      >
+                        <Avatar name={e.fullName} src={e.photo} size="sm" />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5 text-sm font-medium"><span className="size-2 rounded-full" style={{ background: e.calendarColor }} aria-hidden />{e.fullName}</span>
+                          <span className="block truncate text-xs text-muted">{performsAny(e) ? e.jobTitle : 'Helper'}</span>
+                        </span>
+                        {selected && form.employeeIds.length > 1 ? (
+                          <span className="shrink-0 rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">{position === 0 ? 'Lead' : `+${position}`}</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+                {team.length > 1 ? (
+                  <p className="mt-2 flex items-center gap-1.5 text-xs text-accent"><Users className="size-3.5" aria-hidden />{team.length} people · commission shared equally</p>
+                ) : null}
+              </>
             )}
             {errors.employee ? <p className="mt-1 text-xs text-danger" role="alert">{errors.employee}</p> : null}
+            {!errors.employee && uncovered.length ? <p className="mt-1 text-xs text-warning" role="status">Nobody chosen performs {uncovered.map((s) => s.name).join(', ')}.</p> : null}
           </div>
 
           <div>
             <p className="mb-1.5 flex items-center gap-1.5 text-sm font-medium"><Clock className="size-4 text-muted" /> Time</p>
-            {!form.employeeId ? (
-              <p className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-muted">Choose a stylist to see free times.</p>
+            {!form.employeeIds.length ? (
+              <p className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-muted">Choose staff to see free times.</p>
             ) : availability.isPending || availability.isFetching ? (
               <div className="flex justify-center py-6"><Spinner /></div>
             ) : availability.isError ? (

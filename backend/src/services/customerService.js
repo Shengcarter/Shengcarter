@@ -126,7 +126,9 @@ async function getProfile(id) {
       [id],
     ),
     db.queryOne(
-      `SELECT a.id, a.code, a.start_time, a.status, e.full_name AS employee_name
+      `SELECT a.id, a.code, a.start_time, a.status,
+              COALESCE((SELECT GROUP_CONCAT(se.full_name ORDER BY ast.sort_order SEPARATOR ', ') FROM appointment_staff ast
+                        JOIN employees se ON se.id = ast.employee_id WHERE ast.appointment_id = a.id), e.full_name) AS employee_name
        FROM appointments a JOIN employees e ON e.id = a.employee_id
        WHERE a.customer_id = ? AND a.start_time >= UTC_TIMESTAMP() AND a.status IN ('pending','confirmed')
        ORDER BY a.start_time LIMIT 1`,
@@ -172,7 +174,8 @@ async function appointmentHistory(id, filters) {
   await getById(id);
   const result = await paginate({
     select: `a.id, a.code, a.start_time, a.end_time, a.status, a.total_price, a.notes, a.checked_in_at,
-             e.full_name AS employee_name, b.name AS branch_name,
+             COALESCE((SELECT GROUP_CONCAT(se.full_name ORDER BY ast.sort_order SEPARATOR ', ') FROM appointment_staff ast
+                        JOIN employees se ON se.id = ast.employee_id WHERE ast.appointment_id = a.id), e.full_name) AS employee_name, b.name AS branch_name,
              (SELECT GROUP_CONCAT(aps.service_name ORDER BY aps.sort_order SEPARATOR ', ')
               FROM appointment_services aps WHERE aps.appointment_id = a.id) AS services`,
     from: `FROM appointments a JOIN employees e ON e.id = a.employee_id JOIN branches b ON b.id = a.branch_id WHERE a.customer_id = ?`,
@@ -197,7 +200,9 @@ async function purchaseHistory(id, filters) {
   const rows = camelizeRows(result.rows);
   if (rows.length) {
     const items = await db.query(
-      `SELECT si.sale_id, si.item_type, si.description, si.quantity, si.unit_price, si.line_total, e.full_name AS employee_name
+      `SELECT si.sale_id, si.item_type, si.description, si.quantity, si.unit_price, si.line_total,
+              COALESCE((SELECT GROUP_CONCAT(e.full_name ORDER BY sis.sort_order SEPARATOR ', ') FROM sale_item_staff sis
+                        JOIN employees e ON e.id = sis.employee_id WHERE sis.sale_item_id = si.id), e.full_name) AS employee_name
        FROM sale_items si LEFT JOIN employees e ON e.id = si.employee_id WHERE si.sale_id IN (?) ORDER BY si.id`,
       [rows.map((r) => r.id)],
     );

@@ -41,7 +41,7 @@ export function ThermalReceipt({ sale }) {
         <div key={item.id} style={{ marginBottom: 4 }}>
           <div style={{ fontWeight: 700 }}>{item.description}</div>
           <div style={row}>
-            <span>{item.quantity} × {formatMoney(item.unitPrice)}{item.employeeName ? ` (${item.employeeName.split(' ')[0]})` : ''}</span>
+            <span>{item.quantity} × {formatMoney(item.unitPrice)}{item.staff?.length ? ` (${item.staff.map((m) => m.fullName.split(' ')[0]).join(' & ')})` : item.employeeName ? ` (${item.employeeName.split(' ')[0]})` : ''}</span>
             <span>{formatMoney(item.lineTotal)}</span>
           </div>
         </div>

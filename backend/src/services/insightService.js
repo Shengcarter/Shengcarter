@@ -200,16 +200,16 @@ function buildFindings({ period, sales, prevServices, services, customers, staff
     });
   }
 
-  // Money out. Salary payments follow the payday, so a 30-day window can hold
-  // two paydays or none; costs are compared like for like instead: running
-  // costs (everything except Payroll salary payments) plus wages as earned.
+  // Money out. Commission payouts follow the payday, so a 30-day window can
+  // hold two paydays or none; costs are compared like for like instead:
+  // running costs (everything except commission payouts) plus commission as earned.
   const e = expenses.summary;
-  const costs = e.runningCosts + e.wagesEarned;
+  const costs = e.runningCosts + e.commissionEarned;
   if (costs > 0 && sales.summary.net > 0) {
     if (e.costShareOfSales >= 70) {
-      add({ id: 'expense-ratio', category: 'finance', severity: 'critical', title: `Costs are ${formatNumber(e.costShareOfSales, 1)}% of net sales`, detail: `${money(e.runningCosts)} of running costs and ${money(e.wagesEarned)} of wages earned against ${money(sales.summary.net)} of net sales.${e.largestRunningCategory ? ` The largest running cost is ${e.largestRunningCategory}.` : ''}`, action: { label: 'Expenses', to: '/expenses' } });
+      add({ id: 'expense-ratio', category: 'finance', severity: 'critical', title: `Costs are ${formatNumber(e.costShareOfSales, 1)}% of net sales`, detail: `${money(e.runningCosts)} of running costs and ${money(e.commissionEarned)} of staff commission earned against ${money(sales.summary.net)} of net sales.${e.largestRunningCategory ? ` The largest running cost is ${e.largestRunningCategory}.` : ''}`, action: { label: 'Expenses', to: '/expenses' } });
     } else if (e.runningCostsChange !== null && e.runningCostsChange >= 25 && e.runningCosts - e.previousRunningCosts >= 0.02 * sales.summary.net) {
-      add({ id: 'expense-growth', category: 'finance', severity: 'warning', title: `Running costs rose ${abs(e.runningCostsChange)}`, detail: `${money(e.runningCosts)} compared with ${money(e.previousRunningCosts)} in the previous period${e.largestRunningCategory ? `; the largest was ${e.largestRunningCategory}` : ''}. Salary payments are left out because paydays fall unevenly between periods.`, action: { label: 'Expenses', to: '/expenses' } });
+      add({ id: 'expense-growth', category: 'finance', severity: 'warning', title: `Running costs rose ${abs(e.runningCostsChange)}`, detail: `${money(e.runningCosts)} compared with ${money(e.previousRunningCosts)} in the previous period${e.largestRunningCategory ? `; the largest was ${e.largestRunningCategory}` : ''}. Commission payouts are left out because paydays fall unevenly between periods.`, action: { label: 'Expenses', to: '/expenses' } });
     }
   }
   if (sales.summary.outstanding > 0) {
@@ -266,8 +266,8 @@ function factsFor({ period, sales, services, customers, staff, inventory, expens
     },
     expenses: {
       runningCosts: expenses.summary.runningCosts, runningCostsChangePercent: expenses.summary.runningCostsChange,
-      wagesEarned: expenses.summary.wagesEarned, costSharePercentOfNetSales: expenses.summary.costShareOfSales,
-      note: 'Running costs exclude salary payments, which follow the payday; wages are counted as earned instead.',
+      staffCommissionEarned: expenses.summary.commissionEarned, costSharePercentOfNetSales: expenses.summary.costShareOfSales,
+      note: 'Staff are paid by commission only. Running costs exclude commission payouts, which follow the payday; commission is counted as earned instead.',
       topCategories: expenses.categories.slice(0, 4),
     },
     monthForecast: forecast,

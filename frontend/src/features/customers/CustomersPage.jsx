@@ -24,10 +24,11 @@ export default function CustomersPage() {
   const customers = useCustomers(params);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Deep link from the dashboard: /customers?new=1 opens the form.
+  // Deep links: /customers?new=1 opens the form (dashboard), ?import=1 the import (Settings → Import data).
   useEffect(() => {
-    if (!searchParams.get('new')) return;
-    if (can('customers.create')) setCreating(true);
+    if (!searchParams.get('new') && !searchParams.get('import')) return;
+    if (searchParams.get('new') && can('customers.create')) setCreating(true);
+    if (searchParams.get('import') && can('customers.import')) setImporting(true);
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams, can]);
 

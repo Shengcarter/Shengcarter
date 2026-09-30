@@ -1,6 +1,6 @@
 # ZOLA STYLISH MANAGEMENT SYSTEM
 
-A complete salon ERP and point-of-sale system for beauty salons and barbershops: customers, appointments, services, staff, point of sale, inventory, suppliers, expenses, payroll, loyalty, reports and business insights — in one web application that runs on a single Windows computer for the whole salon, on a Linux server, or in Docker.
+A complete salon ERP and point-of-sale system for beauty salons and barbershops: customers, appointments, services, staff, point of sale, inventory, suppliers, expenses, staff commission, loyalty, reports and business insights — in one web application that runs on a single Windows computer for the whole salon, on a Linux server, or in Docker.
 
 ---
 
@@ -31,21 +31,23 @@ More documentation: [Deployment guide](docs/DEPLOYMENT.md) · [WhatsApp setup](d
 
 | Module | What it does |
 | --- | --- |
-| **Dashboard** | Today's and month-to-date sales with comparisons, profit after wages, balances owed, 30-day revenue, today's appointments, top services and stylists, payment mix, stock alerts, birthdays, team attendance and top insights. Stylists see "My day" with their services, commission and clock in/out. |
+| **Dashboard** | Today's and month-to-date sales with comparisons, profit after staff commission, balances owed, 30-day revenue, today's appointments, top services and stylists, payment mix, stock alerts, birthdays, team attendance and top insights. Stylists see "My day" with their services, commission and clock in/out. |
 | **Customers** | Profiles, visit history, purchases, payments, notes, loyalty points and tiers, photo, marketing preferences; duplicate-safe phone numbers; **import a customer list from Excel or CSV**. |
-| **Appointments** | Day / week / month / list calendars with drag-and-drop rescheduling, stylist availability, working hours and leave, server-side double-booking prevention, reminders, QR code check-in. |
+| **Appointments** | Day / week / month / list calendars with drag-and-drop rescheduling, stylist availability, working hours and leave, server-side double-booking prevention, reminders, QR code check-in. **Several staff can do one appointment together**: everyone's time is blocked and it shows in each person's calendar column. |
 | **Services** | Categories, prices, durations, commission rates, which staff perform which service. |
-| **Employees** | Profiles, schedules, services, attendance (clock in/out, lateness), leave requests and approval, commissions, salary preparation and payment, performance. |
+| **Employees** | Profiles, schedules, services, attendance (clock in/out, lateness), leave requests and approval, performance. Staff are **paid by commission only**: *Commission payouts* gathers each person's unpaid commission for a period (plus any bonus, minus deductions such as an advance) and records the payment as an expense. |
 | **Point of sale** | Services and products (with barcode scanning), discounts, loyalty redemption, no tax by default (the customer pays exactly the listed price; inclusive or exclusive tax can be switched on in Settings → Financial), split payments (cash, mobile money, card, bank), change, balances, refunds, thermal (80 mm) receipts and A4 invoices (print or PDF), appointment checkout; **import past sales from Excel or CSV**. |
 | **Inventory** | Products, stock ledger (purchases, sales, refunds, counts, damage, salon use), low-stock alerts, valuation. |
 | **Suppliers & purchases** | Supplier records, purchase orders, receiving stock, supplier payments and balances. |
-| **Expenses** | Categories, receipts (image/PDF), vendors; salary payments are recorded automatically. |
+| **Expenses** | Categories, receipts (image/PDF), vendors; commission payouts are recorded automatically under *Staff commissions*. |
 | **Reports** | Sales, customers, services, staff, inventory, expenses, profit & loss and branch comparison — exportable to **PDF, Excel and CSV**. |
 | **Insights** | Built-in analysis of trends, risks and opportunities (works offline), with an optional AI-written summary. |
 | **Messaging** | WhatsApp, SMS and email: booking confirmations and reminders that ask the customer to **reply YES to confirm or LATE 15 if running late** (replies update the calendar and alert the front desk), a **thank-you after payment**, cancellations, promotions to opted-in customers, win-back and birthday campaigns — with a log of every message sent and received. Setup: [docs/WHATSAPP.md](docs/WHATSAPP.md). |
 | **Administration** | Users, roles and permissions, branches, business/financial/system settings, integrations, loyalty programme, activity (audit) log, backups. |
 
-**Bringing in records kept in Excel:** on the **Customers** page and the **Sales history** page, choose **Import** and pick an Excel (`.xlsx`) or CSV file — or first **Download template**, a ready-made sheet with the right columns and drop-down lists of your services, products and staff. The system reads column names loosely (English or Swahili, e.g. *Phone*, *Simu*), then shows every row as *Ready*, *Skipped* (already in the system) or *Problem* (with the reason) before anything is saved. Nothing is imported until you confirm; you can import only the good rows, and the import is all-or-nothing. Imported sales keep their original date and exact amounts, are marked *Imported*, and do not change stock, commissions or loyalty points; importing the same file again adds nothing twice.
+**Commission shared between staff:** when several people perform a service (at the POS, or everyone booked on the appointment), the service's value and its commission are shared **equally** between them, down to the last shilling (10,000 between three people is 3,334 + 3,333 + 3,333). If the service has its own commission rate, that commission is split equally; otherwise each person earns their own rate on their equal share.
+
+**Bringing in records kept in Excel:** *Settings → Import data* explains the order (services, products and staff first, then customers, then past sales). You can also choose **Import** on the **Customers** page, or **Import past sales** on the **POS** page, and pick an Excel (`.xlsx`) or CSV file — or first **Download template**, a ready-made sheet with the right columns and drop-down lists of your services, products and staff. The system reads column names loosely (English or Swahili, e.g. *Phone*, *Simu*) and accepts several staff on one line (*Neema & Rehema*), then shows every row as *Ready*, *Skipped* (already in the system) or *Problem* (with the reason) before anything is saved. Nothing is imported until you confirm; you can import only the good rows, and the import is all-or-nothing. Imported sales keep their original date and exact amounts, are marked *Imported*, and do not change stock, commissions or loyalty points; importing the same file again adds nothing twice.
 
 **Technology:** React 19, Vite, Tailwind CSS, Framer Motion, TanStack Query, React Hook Form + Zod, Recharts · Node.js (Express 5) REST API with JWT authentication · MySQL 8.
 
@@ -105,7 +107,7 @@ npm --prefix backend start            # http://localhost:5000
 
 ### Demo data (optional)
 
-Set `SEED_DEMO_DATA=true` and a `DEMO_PASSWORD` in `.env` before `setup:db` to load clearly-labelled demo records: 15 services, 7 staff, 15 products, 4 suppliers, 128 customers and about four months of appointments, sales, purchases, expenses, payroll and attendance (generated through the real business logic, so every report is consistent). Demo accounts: `receptionist.demo@zolastylish.local`, `stylist.demo@zolastylish.local`, `accountant.demo@zolastylish.local` (password = `DEMO_PASSWORD`).
+Set `SEED_DEMO_DATA=true` and a `DEMO_PASSWORD` in `.env` before `setup:db` to load clearly-labelled demo records: 15 services, 7 staff, 15 products, 4 suppliers, 128 customers and about four months of appointments, sales, purchases, expenses, commission payouts and attendance (generated through the real business logic, so every report is consistent). Demo accounts: `receptionist.demo@zolastylish.local`, `stylist.demo@zolastylish.local`, `accountant.demo@zolastylish.local` (password = `DEMO_PASSWORD`).
 
 Before going live, remove it all with:
 
@@ -125,7 +127,7 @@ It refuses to run (and lists why) if any of your own records use demo records, s
    - **`npm run migrate`** — on an empty database applies [`database/schema.sql`](database/schema.sql) (the baseline), then every file in [`database/migrations/`](database/migrations) not yet applied, recording each in `schema_migrations`. Safe to run on every update.
    - **`npm run seed`** — loads reference data ([`database/seed.sql`](database/seed.sql): roles, permissions, categories, loyalty tiers, default settings), creates the first Super Admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` when none exists (password change required at first login), and optionally the demo data. Safe to run repeatedly.
 
-The schema has 41 tables with foreign keys, indexes and check constraints; all timestamps are UTC. Nothing in the code base contains a production password.
+The database has 43 tables (41 in the baseline schema, 2 added by migrations) with foreign keys, indexes and check constraints; all timestamps are UTC. Nothing in the code base contains a production password.
 
 **Updating to a new version:** stop the server, back up, replace the files, run `npm --prefix backend ci`, `npm --prefix frontend ci && npm --prefix frontend run build`, `npm --prefix backend run migrate`, then start again.
 
@@ -329,7 +331,7 @@ Four roles are created by default; every permission can be changed in **Settings
 | **Super Admin** | Everything: all modules, settings, integrations, users, roles, branches, backups, activity log, reports and exports. |
 | **Receptionist** | Front desk: customers (create/edit/import), appointments (book, edit, cancel, check in, complete), point of sale and sales history, services, staff list and attendance view, inventory view. |
 | **Stylist / Barber** | Own appointments only (view, check in, complete), services, own attendance (clock in/out) and "My day" dashboard with own services and commission. |
-| **Accountant** | Sales, payments and refunds, importing past sales, expenses, payroll and commissions, inventory/supplier/purchase views, customers and staff views, all reports (including profit & loss), exports and insights. |
+| **Accountant** | Sales, payments and refunds, importing past sales, expenses, commission payouts, inventory/supplier/purchase views, customers and staff views, all reports (including profit & loss), exports and insights. |
 
 Security built in: bcrypt-hashed passwords (8+ characters with letters and numbers), account lockout after repeated failed logins, forced password change for new accounts and after an administrator reset, 15-minute access tokens with rotating refresh tokens (reuse detection signs the session out everywhere), branch isolation, and an audit log of sign-ins and every important change. Details: [docs/SECURITY.md](docs/SECURITY.md).
 

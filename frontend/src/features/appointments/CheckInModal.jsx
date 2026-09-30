@@ -5,6 +5,7 @@ import { Camera, CameraOff, ScanLine } from 'lucide-react';
 import { Button, Input, Modal } from '../../components/ui';
 import { formatTime } from '../../utils/format';
 import { appointmentApi, appointmentKeys } from './api';
+import { staffNames } from './calendarUtils';
 
 const TOKEN_PATTERN = /([a-f0-9]{32})/i;
 
@@ -124,7 +125,7 @@ export function CheckInModal({ open, onClose, onCheckedIn }) {
             <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm" role="status">
               <p className="font-semibold text-success">Checked in</p>
               <p className="mt-1">{result.appointment.customerName} · {result.appointment.code}</p>
-              <p className="text-muted">{formatTime(result.appointment.startTime)} with {result.appointment.employeeName} — {result.appointment.services.map((s) => s.serviceName).join(', ')}</p>
+              <p className="text-muted">{formatTime(result.appointment.startTime)} with {staffNames(result.appointment, { full: true })} — {result.appointment.services.map((s) => s.serviceName).join(', ')}</p>
             </div>
           ) : (
             <p className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-danger" role="alert">{result.message}</p>

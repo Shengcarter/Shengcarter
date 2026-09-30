@@ -7,7 +7,7 @@ const { contains, startsWith } = require('../utils/sql');
 
 /** Data access for employees and their schedules / service assignments. */
 const COLUMNS = `e.id, e.code, e.branch_id, e.user_id, e.full_name, e.photo, e.phone, e.email, e.address, e.job_title,
-  e.employment_date, e.salary, e.commission_rate, e.status, e.is_bookable, e.calendar_color, e.notes, e.is_demo,
+  e.employment_date, e.commission_rate, e.status, e.is_bookable, e.calendar_color, e.notes, e.is_demo,
   e.created_at, e.updated_at, b.name AS branch_name, u.email AS user_email, r.name AS user_role`;
 
 const JOINS = `FROM employees e
@@ -71,7 +71,6 @@ const WRITABLE = {
   address: 'address',
   jobTitle: 'job_title',
   employmentDate: 'employment_date',
-  salary: 'salary',
   commissionRate: 'commission_rate',
   status: 'status',
   isBookable: 'is_bookable',
@@ -138,11 +137,12 @@ async function replaceServices(employeeId, serviceIds, conn) {
 
 async function historyCount(employeeId) {
   const row = await db.queryOne(
-    `SELECT (SELECT COUNT(*) FROM appointments WHERE employee_id = ?)
+    `SELECT (SELECT COUNT(*) FROM appointment_staff WHERE employee_id = ?)
+          + (SELECT COUNT(*) FROM sale_item_staff WHERE employee_id = ?)
           + (SELECT COUNT(*) FROM sale_items WHERE employee_id = ?)
           + (SELECT COUNT(*) FROM attendance WHERE employee_id = ?)
           + (SELECT COUNT(*) FROM salary_records WHERE employee_id = ?) AS total`,
-    [employeeId, employeeId, employeeId, employeeId],
+    [employeeId, employeeId, employeeId, employeeId, employeeId],
   );
   return Number(row.total);
 }

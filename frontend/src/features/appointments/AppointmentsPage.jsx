@@ -10,7 +10,7 @@ import { useMediaQuery, usePermission, useSettings, useDocumentTitle } from '../
 import { useAuthStore } from '../../store/authStore';
 import { useEmployeeOptions } from '../services/api';
 import { appointmentApi, appointmentKeys, useAppointmentList, useCalendar } from './api';
-import { EDITABLE_STATUSES, dt, localDateOf, rangeForView, shiftDate, titleForView, visibleHours } from './calendarUtils';
+import { EDITABLE_STATUSES, dt, localDateOf, rangeForView, shiftDate, staffNames, titleForView, visibleHours } from './calendarUtils';
 import { TimeGrid } from './TimeGrid';
 import { MonthView } from './MonthView';
 import { AgendaView, DateStrip } from './AgendaView';
@@ -53,7 +53,7 @@ function ListView({ employeeId, onOpen }) {
           { key: 'startTime', header: 'When', primary: true, render: (a) => <div><p className="font-medium">{formatDateTime(a.startTime)}</p><p className="text-xs text-muted">{a.code}</p></div> },
           { key: 'customerName', header: 'Customer', render: (a) => <div><p>{a.customerName}</p><p className="text-xs text-muted">{a.customerPhone}</p></div> },
           { key: 'services', header: 'Services', render: (a) => <span className="line-clamp-1">{a.services}</span> },
-          { key: 'employeeName', header: 'Stylist', render: (a) => <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ background: a.employeeColor }} />{a.employeeName}</span> },
+          { key: 'employeeName', header: 'Staff', render: (a) => <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ background: a.employeeColor }} />{staffNames(a, { full: a.staff?.length <= 1 })}</span> },
           { key: 'totalPrice', header: 'Value', align: 'right', render: (a) => formatMoney(a.totalPrice) },
           { key: 'status', header: 'Status', render: (a) => <StatusBadge status={a.status} /> },
         ]}
@@ -128,7 +128,14 @@ export default function AppointmentsPage() {
     });
   }, [view, visibleEmployees, date, settings.system?.business_hours]);
 
-  const eventColumn = useCallback((e) => (view === 'day' ? `emp-${e.employeeId}` : `day-${localDateOf(e.startTime)}`), [view]);
+  // In the day view an appointment done by several people shows in each person's column.
+  const gridEvents = useMemo(
+    () => (view === 'day'
+      ? events.flatMap((e) => (e.staff?.length ? e.staff : [{ id: e.employeeId }]).map((m) => ({ ...e, columnEmployeeId: m.id, slotKey: `${e.id}-${m.id}` })))
+      : events),
+    [events, view],
+  );
+  const eventColumn = useCallback((e) => (view === 'day' ? `emp-${e.columnEmployeeId ?? e.employeeId}` : `day-${localDateOf(e.startTime)}`), [view]);
 
   /** Drag-and-drop: compute the new start, update optimistically, then save. */
   const onMove = async ({ event, column, minutesDelta }) => {
@@ -136,20 +143,24 @@ export default function AppointmentsPage() {
     const target = column.date ? dt(column.date).set({ hour: start.hour, minute: start.minute }) : start;
     const newStart = target.plus({ minutes: minutesDelta });
     const duration = new Date(event.endTime) - new Date(event.startTime);
-    const newEmployeeId = column.employeeId || event.employeeId;
+    // Dropping in another person's column moves this person's part to them; the rest of the team stays.
+    const fromEmployeeId = event.columnEmployeeId;
+    const toEmployeeId = column.employeeId && column.employeeId !== fromEmployeeId ? column.employeeId : null;
     const key = appointmentKeys.calendar(calendarParams);
     const previous = qc.getQueryData(key);
-    const movedEmployee = (employees.data || []).find((e) => e.id === newEmployeeId);
+    const movedTo = (employees.data || []).find((e) => e.id === toEmployeeId);
     qc.setQueryData(key, (list = []) =>
-      list.map((e) =>
-        e.id === event.id
-          ? { ...e, startTime: newStart.toUTC().toISO(), endTime: new Date(newStart.toMillis() + duration).toISOString(), employeeId: newEmployeeId, employeeName: movedEmployee?.fullName || e.employeeName, employeeColor: movedEmployee?.calendarColor || e.employeeColor }
-          : e,
-      ),
+      list.map((e) => {
+        if (e.id !== event.id) return e;
+        const staff = toEmployeeId && movedTo
+          ? (e.staff || []).map((m) => (m.id === fromEmployeeId ? { id: movedTo.id, fullName: movedTo.fullName, color: movedTo.calendarColor } : m))
+          : e.staff;
+        return { ...e, startTime: newStart.toUTC().toISO(), endTime: new Date(newStart.toMillis() + duration).toISOString(), staff };
+      }),
     );
     try {
-      const res = await appointmentApi.reschedule(event.id, { startTime: newStart.toISO(), employeeId: newEmployeeId });
-      toast.success(`${event.code} moved to ${newStart.toFormat('ccc dd LLL, HH:mm')}${newEmployeeId !== event.employeeId ? ` with ${res.data.employeeName}` : ''}`);
+      await appointmentApi.reschedule(event.id, { startTime: newStart.toISO(), ...(toEmployeeId ? { employeeId: toEmployeeId, fromEmployeeId } : {}) });
+      toast.success(`${event.code} moved to ${newStart.toFormat('ccc dd LLL, HH:mm')}${toEmployeeId ? ` — ${movedTo?.fullName || 'new staff member'} takes over` : ''}`);
     } catch (error) {
       qc.setQueryData(key, previous);
       toast.error(error.message);
@@ -181,7 +192,7 @@ export default function AppointmentsPage() {
     content = (
       <TimeGrid
         columns={columns}
-        events={events}
+        events={gridEvents}
         hours={hours}
         slotMinutes={slotMinutes}
         eventColumn={eventColumn}

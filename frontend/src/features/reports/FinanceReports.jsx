@@ -111,7 +111,7 @@ export function ProfitReport({ params }) {
                 { label: 'Net sales', icon: Banknote, value: money(s.netSales), trend: s.change.netSales ?? undefined, caption: 'Excluding tax' },
                 { label: 'Gross profit', icon: Coins, value: money(s.grossProfit), caption: `${percent(s.grossMargin)} margin` },
                 { label: 'Expenses', icon: Wallet, value: money(s.expenses), trend: s.change.expenses ?? undefined, caption: s.change.expenses === null ? 'Nothing to compare yet' : 'vs previous period' },
-                { label: 'Profit after wages', icon: Scale, tone: s.afterWages.profit < 0 ? 'danger' : 'success', value: money(s.afterWages.profit), trend: s.afterWages.change ?? undefined, caption: `Cash profit ${money(s.netProfit)}` },
+                { label: 'Profit after commission', icon: Scale, tone: s.afterCommission.profit < 0 ? 'danger' : 'success', value: money(s.afterCommission.profit), trend: s.afterCommission.change ?? undefined, caption: `Cash profit ${money(s.netProfit)}` },
               ]}
             />
             <div className="grid gap-6 xl:grid-cols-3">
@@ -128,20 +128,20 @@ export function ProfitReport({ params }) {
                   <StatementLine label="Net profit (cash paid out)" value={s.netProfit} strong tone={s.netProfit < 0 ? 'danger' : 'success'} note={percent(s.netMargin)} />
                 </dl>
                 <div className="border-t border-line px-5 pt-4">
-                  <p className="text-sm font-semibold">Profit after wages</p>
-                  <p className="mt-0.5 text-xs text-muted">Counts wages for the days worked, paid or not, so profit does not jump on payday. Running costs are all expenses except salary payments.</p>
+                  <p className="text-sm font-semibold">Profit after commission</p>
+                  <p className="mt-0.5 text-xs text-muted">Staff are paid by commission. This counts commission when it is earned, paid out or not, so profit does not jump on payday. Running costs are all expenses except commission payouts.</p>
                 </div>
                 <dl className="pb-2">
                   <StatementLine label="Gross profit" value={s.grossProfit} />
-                  <StatementLine label="Running costs" value={s.afterWages.runningCosts} minus />
-                  <StatementLine label="Salaries for days worked" value={s.afterWages.salaries} minus />
-                  <StatementLine label="Commission earned" value={s.afterWages.commission} minus />
-                  <StatementLine label="Profit after wages" value={s.afterWages.profit} strong tone={s.afterWages.profit < 0 ? 'danger' : 'success'} note={percent(s.afterWages.margin)} />
+                  <StatementLine label="Running costs" value={s.afterCommission.runningCosts} minus />
+                  <StatementLine label="Commission earned" value={s.afterCommission.commission} minus />
+                  {s.afterCommission.bonuses ? <StatementLine label="Payout bonuses less deductions" value={s.afterCommission.bonuses} minus /> : null}
+                  <StatementLine label="Profit after commission" value={s.afterCommission.profit} strong tone={s.afterCommission.profit < 0 ? 'danger' : 'success'} note={percent(s.afterCommission.margin)} />
                 </dl>
                 <div className="space-y-1.5 border-t border-line px-5 py-4 text-xs text-muted">
                   <p>Discounts given: {money(s.discounts)} (already deducted from sales).</p>
-                  <p>Commission earned but not yet paid: {money(s.unpaidCommission)} — it becomes an expense when salaries are paid.</p>
-                  <p>Once every salary for the period has been paid, profit after wages equals net profit.</p>
+                  <p>Commission earned but not yet paid out: {money(s.unpaidCommission)} — it becomes an expense when it is paid out.</p>
+                  <p>Once all commission for the period has been paid out, profit after commission equals net profit.</p>
                   <p>Customer balances still owed: {money(s.outstanding)}.</p>
                 </div>
               </Card>

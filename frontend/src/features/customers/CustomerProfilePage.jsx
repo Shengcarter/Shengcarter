@@ -242,7 +242,7 @@ export default function CustomerProfilePage() {
               columns={[
                 { key: 'startTime', header: 'Date', primary: true, render: (a) => <div><p className="font-medium">{formatDateTime(a.startTime)}</p><p className="text-xs text-muted">{a.code}</p></div> },
                 { key: 'services', header: 'Services', render: (a) => <span className="line-clamp-1">{a.services}</span> },
-                { key: 'employeeName', header: 'Stylist' },
+                { key: 'employeeName', header: 'Staff' },
                 { key: 'totalPrice', header: 'Value', align: 'right', render: (a) => formatMoney(a.totalPrice) },
                 { key: 'status', header: 'Status', render: (a) => <StatusBadge status={a.status} /> },
               ]}

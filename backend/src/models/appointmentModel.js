@@ -8,6 +8,12 @@ const { contains, startsWith } = require('../utils/sql');
 /** Statuses that occupy the stylist's time (everything except cancelled / no-show). */
 const BLOCKING_EXCLUDED = ['cancelled', 'no_show'];
 
+/**
+ * An appointment can have several staff members (appointment_staff). The
+ * first one is the lead and is also stored in appointments.employee_id.
+ */
+const MEMBER_OF = (alias = 'a') => `EXISTS (SELECT 1 FROM appointment_staff ast WHERE ast.appointment_id = ${alias}.id AND ast.employee_id = ?)`;
+
 const LIST_COLUMNS = `a.id, a.code, a.branch_id, a.customer_id, a.employee_id, a.start_time, a.end_time, a.status, a.source,
   a.notes, a.total_price, a.total_duration, a.checked_in_at, a.created_at,
   a.customer_response, a.customer_response_at, a.customer_delay_minutes,
@@ -24,11 +30,13 @@ function scopeFilters(filters, where, params) {
   where.push('a.branch_id = ?');
   params.push(filters.branchId);
   if (filters.ownUserId) {
-    where.push('e.user_id = ?');
+    // A stylist sees every appointment they are part of, not only the ones they lead.
+    where.push(`EXISTS (SELECT 1 FROM appointment_staff ast JOIN employees se ON se.id = ast.employee_id
+                        WHERE ast.appointment_id = a.id AND se.user_id = ?)`);
     params.push(filters.ownUserId);
   }
   if (filters.employeeId) {
-    where.push('a.employee_id = ?');
+    where.push(MEMBER_OF());
     params.push(filters.employeeId);
   }
   if (filters.customerId) {
@@ -41,13 +49,36 @@ function scopeFilters(filters, where, params) {
   }
 }
 
+/** Staff of several appointments: Map(appointmentId → [{ id, fullName, color, userId, jobTitle }]) in team order. */
+async function staffFor(appointmentIds, conn) {
+  const map = new Map();
+  if (!appointmentIds.length) return map;
+  const rows = await db.query(
+    `SELECT ast.appointment_id, e.id, e.full_name, e.calendar_color, e.user_id, e.job_title
+     FROM appointment_staff ast JOIN employees e ON e.id = ast.employee_id
+     WHERE ast.appointment_id IN (?) ORDER BY ast.appointment_id, ast.sort_order, e.full_name`,
+    [appointmentIds],
+    conn,
+  );
+  for (const r of rows) {
+    if (!map.has(r.appointment_id)) map.set(r.appointment_id, []);
+    map.get(r.appointment_id).push({ id: r.id, fullName: r.full_name, color: r.calendar_color, userId: r.user_id, jobTitle: r.job_title });
+  }
+  return map;
+}
+
+async function withStaff(rows, conn) {
+  const staff = await staffFor(rows.map((r) => r.id), conn);
+  return rows.map((r) => ({ ...r, staff: staff.get(r.id) || [] }));
+}
+
 /** Every appointment in a time range (calendar views). */
 async function listRange(filters) {
   const where = ['a.start_time < ?', 'a.end_time > ?'];
   const params = [filters.end, filters.start];
   scopeFilters(filters, where, params);
   const rows = await db.query(`SELECT ${LIST_COLUMNS} ${LIST_JOINS} WHERE ${where.join(' AND ')} ORDER BY a.start_time LIMIT 2000`, params);
-  return camelizeRows(rows);
+  return withStaff(camelizeRows(rows));
 }
 
 const SORTS = { startTime: 'a.start_time', createdAt: 'a.created_at', customer: 'c.full_name', status: 'a.status' };
@@ -76,7 +107,7 @@ async function listPaged(filters) {
     orderBy: getSort(filters.sortBy, filters.sortOrder, SORTS, 'startTime'),
     paging: getPaging(filters),
   });
-  return { ...result, rows: camelizeRows(result.rows) };
+  return { ...result, rows: await withStaff(camelizeRows(result.rows)) };
 }
 
 async function findById(id, conn) {
@@ -106,20 +137,21 @@ async function findById(id, conn) {
     [id],
     conn,
   );
-  return { ...camelizeRow(row), services: camelizeRows(services) };
+  const staff = await staffFor([id], conn);
+  return { ...camelizeRow(row), services: camelizeRows(services), staff: staff.get(id) || [] };
 }
 
 async function findByToken(token, conn) {
   return db.queryOne('SELECT id FROM appointments WHERE qr_token = ?', [token], conn);
 }
 
-/** First overlapping appointment for an employee (buffer minutes on both sides). */
+/** First overlapping appointment an employee is part of (buffer minutes on both sides). */
 async function findEmployeeConflict(conn, { employeeId, start, end, excludeId = 0, bufferMinutes = 0 }) {
   return db.queryOne(
-    `SELECT id, code, start_time, end_time FROM appointments
-     WHERE employee_id = ? AND id <> ? AND status NOT IN (?)
-       AND start_time < DATE_ADD(?, INTERVAL ? MINUTE) AND DATE_ADD(end_time, INTERVAL ? MINUTE) > ?
-     ORDER BY start_time LIMIT 1`,
+    `SELECT a.id, a.code, a.start_time, a.end_time FROM appointment_staff ast JOIN appointments a ON a.id = ast.appointment_id
+     WHERE ast.employee_id = ? AND a.id <> ? AND a.status NOT IN (?)
+       AND a.start_time < DATE_ADD(?, INTERVAL ? MINUTE) AND DATE_ADD(a.end_time, INTERVAL ? MINUTE) > ?
+     ORDER BY a.start_time LIMIT 1`,
     [employeeId, excludeId, BLOCKING_EXCLUDED, end, bufferMinutes, bufferMinutes, start],
     conn,
   );
@@ -138,9 +170,9 @@ async function findCustomerConflict(conn, { customerId, start, end, excludeId = 
 /** Busy intervals of one employee between two instants (for availability). */
 async function busyIntervals(employeeId, start, end, excludeId = 0) {
   return db.query(
-    `SELECT id, code, start_time, end_time FROM appointments
-     WHERE employee_id = ? AND id <> ? AND status NOT IN (?) AND start_time < ? AND end_time > ?
-     ORDER BY start_time`,
+    `SELECT a.id, a.code, a.start_time, a.end_time FROM appointment_staff ast JOIN appointments a ON a.id = ast.appointment_id
+     WHERE ast.employee_id = ? AND a.id <> ? AND a.status NOT IN (?) AND a.start_time < ? AND a.end_time > ?
+     ORDER BY a.start_time`,
     [employeeId, excludeId, BLOCKING_EXCLUDED, end, start],
   );
 }
@@ -166,8 +198,19 @@ async function replaceServices(conn, appointmentId, services) {
   );
 }
 
+/** Set the appointment's team; employeeIds[0] is the lead. */
+async function replaceStaff(conn, appointmentId, employeeIds) {
+  await db.query('DELETE FROM appointment_staff WHERE appointment_id = ?', [appointmentId], conn);
+  await db.query(
+    'INSERT INTO appointment_staff (appointment_id, employee_id, sort_order) VALUES ?',
+    [employeeIds.map((employeeId, i) => [appointmentId, employeeId, i])],
+    conn,
+  );
+}
+
 module.exports = {
   BLOCKING_EXCLUDED,
+  staffFor,
   listRange,
   listPaged,
   findById,
@@ -177,4 +220,5 @@ module.exports = {
   busyIntervals,
   insert,
   replaceServices,
+  replaceStaff,
 };

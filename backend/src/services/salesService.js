@@ -9,7 +9,7 @@ const { contains } = require('../utils/sql');
 const { D, toNumber } = require('../utils/money');
 const { nextSequenceValue, formatNumber } = require('../utils/sequence');
 const { localDateRange, localDateString } = require('../utils/time');
-const { calculateTotals, applyPayments, commissionFor } = require('./pricing');
+const { calculateTotals, applyPayments, shareServiceLine, splitEvenly } = require('./pricing');
 const settings = require('./settingsService');
 const inventoryService = require('./inventoryService');
 const loyaltyService = require('./loyaltyService');
@@ -21,12 +21,13 @@ const audit = require('./auditService');
  * Point of sale.
  *
  * createSale() is a single database transaction:
- *   BEGIN → sale → sale items → commissions → payments → stock deduction
+ *   BEGIN → sale → sale items → staff shares + commissions → payments → stock deduction
  *   → loyalty (redeem + earn) → customer stats → appointment completed
  *   → activity log → COMMIT
  * Any failure (e.g. not enough stock) rolls everything back, so a sale is
  * never partially saved. All amounts are computed here with decimal maths;
- * the browser only sends what was sold and how it was paid.
+ * the browser only sends what was sold and how it was paid. A service done by
+ * several people is shared equally between them, commission included.
  */
 
 function moneySettings() {
@@ -65,6 +66,11 @@ async function nextDocumentNumbers(conn) {
   };
 }
 
+/** Staff on a line: employeeIds (first = lead), or employeeId from older clients. */
+function staffOf(item) {
+  return [...new Set(item.employeeIds?.length ? item.employeeIds : item.employeeId ? [item.employeeId] : [])];
+}
+
 /**
  * Load and validate every line item against the database (prices come from
  * here, never the browser). Products are row-locked when `lock` is true.
@@ -72,7 +78,7 @@ async function nextDocumentNumbers(conn) {
 async function resolveLines(conn, items, branchId, { lock = true, requireEmployee = true } = {}) {
   const serviceIds = items.filter((i) => i.type === 'service').map((i) => i.serviceId);
   const productIds = items.filter((i) => i.type === 'product').map((i) => i.productId);
-  const employeeIds = [...new Set(items.map((i) => i.employeeId).filter(Boolean))];
+  const employeeIds = [...new Set(items.flatMap(staffOf))];
 
   const services = serviceIds.length ? await db.query('SELECT id, name, price, commission_rate, is_active FROM services WHERE id IN (?)', [serviceIds], conn) : [];
   // Products are locked so the stock check and deduction see the same quantity.
@@ -85,19 +91,25 @@ async function resolveLines(conn, items, branchId, { lock = true, requireEmploye
 
   const errors = [];
   const lines = items.map((item, index) => {
-    const employee = item.employeeId ? employees.find((e) => e.id === item.employeeId) : null;
-    if (item.employeeId && (!employee || employee.branch_id !== branchId || employee.status === 'terminated')) {
-      errors.push({ field: `items.${index}.employeeId`, message: 'Staff member not found in this branch' });
+    const staff = staffOf(item).map((employeeId) => employees.find((e) => e.id === employeeId));
+    if (staff.some((e) => !e || e.branch_id !== branchId || e.status === 'terminated')) {
+      errors.push({ field: `items.${index}.employeeIds`, message: 'Staff member not found in this branch' });
     }
+    const team = staff.filter(Boolean).map((e) => ({ id: e.id, fullName: e.full_name, commissionRate: Number(e.commission_rate || 0) }));
     if (item.type === 'service') {
       const service = services.find((s) => s.id === item.serviceId);
       if (!service || !service.is_active) {
         errors.push({ field: `items.${index}.serviceId`, message: 'Service is not available' });
         return null;
       }
-      if (!employee && requireEmployee) errors.push({ field: `items.${index}.employeeId`, message: `Choose who performed ${service.name}` });
-      const rate = service.commission_rate ?? employee?.commission_rate ?? 0;
-      return { type: 'service', serviceId: service.id, productId: null, employeeId: employee?.id || null, description: service.name, quantity: item.quantity || 1, unitPrice: service.price, unitCost: 0, commissionRate: Number(rate) };
+      if (!team.length && requireEmployee) errors.push({ field: `items.${index}.employeeIds`, message: `Choose who performed ${service.name}` });
+      // The service's own rate wins; otherwise each person earns their own rate.
+      const serviceRate = service.commission_rate === null ? null : Number(service.commission_rate);
+      return {
+        type: 'service', serviceId: service.id, productId: null, employeeId: team[0]?.id || null, staff: team,
+        description: service.name, quantity: item.quantity || 1, unitPrice: service.price, unitCost: 0,
+        serviceRate, commissionRate: serviceRate ?? team[0]?.commissionRate ?? 0,
+      };
     }
     const product = products.find((p) => p.id === item.productId);
     if (!product || product.branch_id !== branchId || product.status !== 'active' || !product.is_retail) {
@@ -108,18 +120,57 @@ async function resolveLines(conn, items, branchId, { lock = true, requireEmploye
     if (product.quantity < alreadyInCart + item.quantity) {
       errors.push({ field: `items.${index}.quantity`, message: `Only ${product.quantity} × ${product.name} in stock` });
     }
-    return { type: 'product', serviceId: null, productId: product.id, employeeId: employee?.id || null, description: product.name, quantity: item.quantity, unitPrice: product.selling_price, unitCost: product.purchase_price, commissionRate: 0 };
+    return {
+      type: 'product', serviceId: null, productId: product.id, employeeId: team[0]?.id || null, staff: team.slice(0, 1),
+      description: product.name, quantity: item.quantity, unitPrice: product.selling_price, unitCost: product.purchase_price, serviceRate: null, commissionRate: 0,
+    };
   });
   if (errors.length) throw ApiError.validation(errors);
   return lines;
 }
 
 /**
- * Complete a sale. `options` is for trusted server-side callers only (never
- * exposed through the API): `soldAt` records a sale at an earlier moment
- * (demo history, imports), `silent` skips notifications and the audit entry,
- * and `demo` marks the sale as generated demo activity.
+ * Insert one sale line with its staff shares and commissions. A service line
+ * is shared equally between the people who performed it, commission included.
+ * Product lines (who sold it) and imported history earn no commission, but the
+ * value is still shared so staff figures add up.
  */
+async function insertLine(conn, { saleId, line, branchId, at, decimals, withCommission = true }) {
+  let shares;
+  let commission = D(0);
+  let rate = 0;
+  if (line.type === 'service' && line.staff.length && withCommission) {
+    ({ shares, commission, rate } = shareServiceLine({ netAmount: line.netAmount, serviceRate: line.serviceRate, staff: line.staff, decimals }));
+  } else {
+    const values = splitEvenly(line.netAmount, Math.max(1, line.staff.length), decimals);
+    shares = line.staff.map((person, i) => ({ employeeId: person.id, revenueShare: values[i], rate: 0, commission: D(0) }));
+  }
+  const itemResult = await db.query(
+    `INSERT INTO sale_items (sale_id, item_type, service_id, product_id, employee_id, description, quantity, unit_price, unit_cost,
+                             line_total, net_amount, commission_rate, commission_amount)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [saleId, line.type, line.serviceId, line.productId, line.employeeId, line.description, line.quantity, line.unitPrice, line.unitCost,
+      toNumber(line.lineTotal), toNumber(line.netAmount), rate, toNumber(commission)],
+    conn,
+  );
+  for (const [i, share] of shares.entries()) {
+    await db.query(
+      'INSERT INTO sale_item_staff (sale_item_id, employee_id, revenue_share, commission_amount, sort_order) VALUES (?, ?, ?, ?, ?)',
+      [itemResult.insertId, share.employeeId, toNumber(share.revenueShare), toNumber(share.commission), i],
+      conn,
+    );
+    if (share.commission.greaterThan(0)) {
+      await db.query(
+        `INSERT INTO commissions (employee_id, branch_id, sale_id, sale_item_id, base_amount, rate, amount, earned_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [share.employeeId, branchId, saleId, itemResult.insertId, toNumber(share.revenueShare), share.rate, toNumber(share.commission), at, at],
+        conn,
+      );
+    }
+  }
+  return itemResult.insertId;
+}
+
 async function createSale(data, ctx, options = {}) {
   const { decimals, tax, allowPartial } = moneySettings();
 
@@ -193,25 +244,9 @@ async function createSale(data, ctx, options = {}) {
     );
     const saleId = saleResult.insertId;
 
-    // Items + commissions + stock
+    // Items + staff shares + commissions + stock
     for (const line of totals.lines) {
-      const commission = line.type === 'service' && line.employeeId ? commissionFor(line.netAmount, line.commissionRate, decimals) : D(0);
-      const itemResult = await db.query(
-        `INSERT INTO sale_items (sale_id, item_type, service_id, product_id, employee_id, description, quantity, unit_price, unit_cost,
-                                 line_total, net_amount, commission_rate, commission_amount)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [saleId, line.type, line.serviceId, line.productId, line.employeeId, line.description, line.quantity, line.unitPrice, line.unitCost,
-          toNumber(line.lineTotal), toNumber(line.netAmount), line.commissionRate, toNumber(commission)],
-        conn,
-      );
-      if (commission.greaterThan(0)) {
-        await db.query(
-          `INSERT INTO commissions (employee_id, branch_id, sale_id, sale_item_id, base_amount, rate, amount, earned_at, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [line.employeeId, ctx.branchId, saleId, itemResult.insertId, toNumber(line.netAmount), line.commissionRate, toNumber(commission), soldAt, soldAt],
-          conn,
-        );
-      }
+      await insertLine(conn, { saleId, line, branchId: ctx.branchId, at: soldAt, decimals });
       if (line.type === 'product') {
         await inventoryService.changeStock(conn, {
           productId: line.productId, branchId: ctx.branchId, change: -line.quantity, type: 'sale', unitCost: line.unitCost,
@@ -308,7 +343,7 @@ async function quote(data, ctx) {
     : 0;
   return {
     lines: totals.lines.map((l) => ({
-      type: l.type, serviceId: l.serviceId, productId: l.productId, employeeId: l.employeeId, description: l.description,
+      type: l.type, serviceId: l.serviceId, productId: l.productId, employeeId: l.employeeId, employeeIds: l.staff.map((m) => m.id), description: l.description,
       quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: toNumber(l.lineTotal), netAmount: toNumber(l.netAmount),
     })),
     subtotal: toNumber(totals.subtotal),
@@ -362,7 +397,21 @@ async function getById(id, ctx) {
       [id],
     ),
   ]);
-  const result = { ...camelizeRow(sale), items: camelizeRows(items), payments: camelizeRows(payments) };
+  // Who performed each line, with their share (several people share a service equally).
+  const staffRows = items.length
+    ? await db.query(
+      `SELECT sis.sale_item_id, sis.employee_id, e.full_name, sis.revenue_share, sis.commission_amount
+       FROM sale_item_staff sis JOIN employees e ON e.id = sis.employee_id
+       WHERE sis.sale_item_id IN (?) ORDER BY sis.sale_item_id, sis.sort_order`,
+      [items.map((i) => i.id)],
+    )
+    : [];
+  const withStaff = camelizeRows(items).map((item) => {
+    const staff = staffRows.filter((r) => r.sale_item_id === item.id)
+      .map((r) => ({ id: r.employee_id, fullName: r.full_name, revenueShare: Number(r.revenue_share), commissionAmount: Number(r.commission_amount) }));
+    return { ...item, staff, employeeName: staff.length ? staff.map((m) => m.fullName).join(', ') : item.employeeName };
+  });
+  const result = { ...camelizeRow(sale), items: withStaff, payments: camelizeRows(payments) };
   // Cost figures are only for people who can see financial reports.
   if (!ctx.user?.isSuperAdmin && !ctx.user?.permissions?.has('reports.financial')) {
     delete result.costOfGoods;
@@ -614,15 +663,18 @@ async function appointmentCheckout(appointmentId, ctx) {
   if (!appointment || appointment.branch_id !== ctx.branchId) throw ApiError.notFound('Appointment not found');
   const billed = await db.queryOne("SELECT id, invoice_number FROM sales WHERE appointment_id = ? AND status = 'completed'", [appointmentId]);
   const services = await db.query('SELECT service_id AS serviceId FROM appointment_services WHERE appointment_id = ? ORDER BY sort_order', [appointmentId]);
+  // Everyone on the appointment performed its services unless the cashier changes a line.
+  const staff = await db.query('SELECT employee_id FROM appointment_staff WHERE appointment_id = ? ORDER BY sort_order', [appointmentId]);
   return {
     id: appointment.id,
     code: appointment.code,
     status: appointment.status,
     customerId: appointment.customer_id,
     employeeId: appointment.employee_id,
+    employeeIds: staff.length ? staff.map((r) => r.employee_id) : [appointment.employee_id],
     serviceIds: services.map((s) => s.serviceId),
     billedSale: billed ? { id: billed.id, invoiceNumber: billed.invoice_number } : null,
   };
 }
 
-module.exports = { createSale, quote, getById, list, listPayments, recordPayment, refundSale, appointmentCheckout, nextDocumentNumbers };
+module.exports = { createSale, quote, getById, list, listPayments, recordPayment, refundSale, appointmentCheckout, nextDocumentNumbers, insertLine };

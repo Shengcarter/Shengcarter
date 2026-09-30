@@ -117,7 +117,18 @@ export default function SaleDetailPage() {
               {s.items.map((item) => (
                 <tr key={item.id} className="border-b border-line/60">
                   <td className="px-4 py-3"><p className="font-medium">{item.description}</p><p className="text-xs text-muted">{titleCase(item.itemType)}{item.commissionAmount > 0 ? ` · commission ${formatMoney(item.commissionAmount)}` : ''}</p></td>
-                  <td className="px-4 py-3 text-muted">{item.employeeName || '—'}</td>
+                  <td className="px-4 py-3 text-muted">
+                    {item.staff?.length > 1 ? (
+                      <ul className="space-y-0.5">
+                        {item.staff.map((m) => (
+                          <li key={m.id}>
+                            {m.fullName}
+                            {m.commissionAmount > 0 ? <span className="block text-xs whitespace-nowrap">commission {formatMoney(m.commissionAmount)}</span> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : item.employeeName || '—'}
+                  </td>
                   <td className="px-4 py-3 text-right tabular-nums">{item.quantity}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{formatMoney(item.unitPrice)}</td>
                   <td className="px-4 py-3 text-right font-medium tabular-nums">{formatMoney(item.lineTotal)}</td>

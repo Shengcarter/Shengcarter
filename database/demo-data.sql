@@ -19,12 +19,12 @@ SELECT c.id, s.name, s.description, s.price, s.duration, s.commission, 1
 FROM (
   SELECT 'haircut' AS cat, 'Haircut' AS name, 'Classic cut, wash and finish.' AS description, 15000 AS price, 30 AS duration, NULL AS commission
   UNION ALL SELECT 'haircut', 'Kids Haircut', 'Haircut for children under 12.', 8000, 20, NULL
-  UNION ALL SELECT 'braiding', 'Braiding', 'Standard braids with customer-supplied or salon hair.', 60000, 180, 18
-  UNION ALL SELECT 'braiding', 'Knotless Braids', 'Medium knotless braids, waist length.', 90000, 300, 18
+  UNION ALL SELECT 'braiding', 'Braiding', 'Standard braids with customer-supplied or salon hair.', 60000, 180, 40
+  UNION ALL SELECT 'braiding', 'Knotless Braids', 'Medium knotless braids, waist length.', 90000, 300, 40
   UNION ALL SELECT 'hair-styling', 'Wash & Blow-dry', 'Shampoo, conditioning and blow-dry styling.', 20000, 45, NULL
   UNION ALL SELECT 'hair-styling', 'Silk Press', 'Heat-protected silk press for natural hair.', 35000, 90, NULL
   UNION ALL SELECT 'makeup', 'Makeup', 'Full-face makeup for day or evening events.', 50000, 60, NULL
-  UNION ALL SELECT 'makeup', 'Bridal Makeup', 'Bridal trial-quality makeup with lashes.', 150000, 120, 20
+  UNION ALL SELECT 'makeup', 'Bridal Makeup', 'Bridal trial-quality makeup with lashes.', 150000, 120, 40
   UNION ALL SELECT 'nails', 'Manicure', 'Nail shaping, cuticle care and polish.', 15000, 45, NULL
   UNION ALL SELECT 'nails', 'Pedicure', 'Foot soak, scrub, nail care and polish.', 20000, 60, NULL
   UNION ALL SELECT 'nails', 'Gel Polish', 'Long-lasting gel polish application.', 25000, 60, NULL
@@ -39,13 +39,13 @@ JOIN service_categories c ON c.slug = s.cat;
 -- Employees
 -- -----------------------------------------------------------------------------
 INSERT IGNORE INTO employees (code, branch_id, full_name, phone, email, address, job_title, employment_date, salary, commission_rate, status, is_bookable, calendar_color, is_demo) VALUES
-  ('EMP-0001', @branch_id, 'Neema Mwakyusa', '+255712000101', 'neema.demo@zolastylish.local', 'Sinza, Dar es Salaam', 'Senior Stylist', '2022-03-01', 800000, 15, 'active', 1, '#D4AF37', 1),
-  ('EMP-0002', @branch_id, 'Baraka Mushi', '+255712000102', 'baraka.demo@zolastylish.local', 'Kinondoni, Dar es Salaam', 'Barber', '2023-01-15', 600000, 12, 'active', 1, '#60A5FA', 1),
-  ('EMP-0003', @branch_id, 'Rehema Said', '+255712000103', 'rehema.demo@zolastylish.local', 'Mwenge, Dar es Salaam', 'Braiding Specialist', '2022-08-10', 650000, 15, 'active', 1, '#F472B6', 1),
-  ('EMP-0004', @branch_id, 'Grace Kimaro', '+255712000104', 'grace.demo@zolastylish.local', 'Mikocheni, Dar es Salaam', 'Nail Technician', '2023-06-01', 500000, 10, 'active', 1, '#34D399', 1),
-  ('EMP-0005', @branch_id, 'Fatuma Hassan', '+255712000105', 'fatuma.demo@zolastylish.local', 'Upanga, Dar es Salaam', 'Makeup Artist & Beautician', '2021-11-20', 700000, 12, 'active', 1, '#A78BFA', 1),
-  ('EMP-0006', @branch_id, 'Joseph Mrema', '+255712000106', 'joseph.demo@zolastylish.local', 'Mbezi, Dar es Salaam', 'Massage Therapist', '2024-02-05', 550000, 10, 'active', 1, '#FB923C', 1),
-  ('EMP-0007', @branch_id, 'Zawadi Mollel', '+255712000107', 'zawadi.demo@zolastylish.local', 'Kijitonyama, Dar es Salaam', 'Receptionist', '2023-09-01', 450000, 0, 'active', 0, '#94A3B8', 1);
+  ('EMP-0001', @branch_id, 'Neema Mwakyusa', '+255712000101', 'neema.demo@zolastylish.local', 'Sinza, Dar es Salaam', 'Senior Stylist', '2022-03-01', 0, 40, 'active', 1, '#D4AF37', 1),
+  ('EMP-0002', @branch_id, 'Baraka Mushi', '+255712000102', 'baraka.demo@zolastylish.local', 'Kinondoni, Dar es Salaam', 'Barber', '2023-01-15', 0, 40, 'active', 1, '#60A5FA', 1),
+  ('EMP-0003', @branch_id, 'Rehema Said', '+255712000103', 'rehema.demo@zolastylish.local', 'Mwenge, Dar es Salaam', 'Braiding Specialist', '2022-08-10', 0, 40, 'active', 1, '#F472B6', 1),
+  ('EMP-0004', @branch_id, 'Grace Kimaro', '+255712000104', 'grace.demo@zolastylish.local', 'Mikocheni, Dar es Salaam', 'Nail Technician', '2023-06-01', 0, 35, 'active', 1, '#34D399', 1),
+  ('EMP-0005', @branch_id, 'Fatuma Hassan', '+255712000105', 'fatuma.demo@zolastylish.local', 'Upanga, Dar es Salaam', 'Makeup Artist & Beautician', '2021-11-20', 0, 35, 'active', 1, '#A78BFA', 1),
+  ('EMP-0006', @branch_id, 'Joseph Mrema', '+255712000106', 'joseph.demo@zolastylish.local', 'Mbezi, Dar es Salaam', 'Massage Therapist', '2024-02-05', 0, 35, 'active', 1, '#FB923C', 1),
+  ('EMP-0007', @branch_id, 'Zawadi Mollel', '+255712000107', 'zawadi.demo@zolastylish.local', 'Kijitonyama, Dar es Salaam', 'Receptionist', '2023-09-01', 0, 0, 'active', 0, '#94A3B8', 1);
 
 UPDATE sequences SET current_value = GREATEST(current_value, 7) WHERE name = 'employee';
 

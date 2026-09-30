@@ -23,10 +23,12 @@ const BLOCKERS = [
   ['sale lines using demo services, products or staff', `SELECT COUNT(*) AS n FROM sale_items i JOIN sales s ON s.id = i.sale_id
      WHERE s.is_demo = 0 AND (i.service_id IN (SELECT id FROM services WHERE is_demo = 1)
        OR i.product_id IN (SELECT id FROM products WHERE is_demo = 1)
-       OR i.employee_id IN (SELECT id FROM employees WHERE is_demo = 1))`],
+       OR i.employee_id IN (SELECT id FROM employees WHERE is_demo = 1)
+       OR EXISTS (SELECT 1 FROM sale_item_staff x JOIN employees d ON d.id = x.employee_id WHERE x.sale_item_id = i.id AND d.is_demo = 1))`],
   ['appointments with demo customers, staff or services', `SELECT COUNT(*) AS n FROM appointments a WHERE a.is_demo = 0 AND (
        a.customer_id IN (SELECT id FROM customers WHERE is_demo = 1)
        OR a.employee_id IN (SELECT id FROM employees WHERE is_demo = 1)
+       OR EXISTS (SELECT 1 FROM appointment_staff x JOIN employees d ON d.id = x.employee_id WHERE x.appointment_id = a.id AND d.is_demo = 1)
        OR EXISTS (SELECT 1 FROM appointment_services x JOIN services v ON v.id = x.service_id WHERE x.appointment_id = a.id AND v.is_demo = 1))`],
   ['purchases from demo suppliers or of demo products', `SELECT COUNT(*) AS n FROM purchases p WHERE p.is_demo = 0 AND (
        p.supplier_id IN (SELECT id FROM suppliers WHERE is_demo = 1)

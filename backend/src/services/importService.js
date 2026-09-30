@@ -12,7 +12,7 @@ const { normalizePhone } = require('../utils/phone');
 const { nextCode } = require('../utils/sequence');
 const { D, round, toNumber } = require('../utils/money');
 const { parseDateTime, todayLocal } = require('../utils/time');
-const { nextDocumentNumbers } = require('./salesService');
+const { nextDocumentNumbers, insertLine } = require('./salesService');
 const { parseSpreadsheet, text, number, boolean, dateTime, timeOfDay } = require('./imports/spreadsheet');
 
 /**
@@ -166,6 +166,8 @@ const PAYMENT_METHODS = {
   bank_transfer: ['bank', 'bank transfer', 'transfer', 'bank_transfer', 'benki'],
 };
 const TYPES = { service: ['service', 'services', 'huduma'], product: ['product', 'products', 'bidhaa', 'item', 'retail'] };
+// Several people on one line: "Neema & Rehema", "Neema, Rehema", "Neema na Rehema".
+const STAFF_SEPARATOR = /\s*(?:,|&|\+|\/|;|\band\b|\bna\b)\s*/i;
 
 async function saleLookups(branchId) {
   const [services, products, employees] = await Promise.all([
@@ -251,14 +253,19 @@ async function analyseSales(rows, ctx) {
     }
     if (amount !== null) display.amount = toNumber(amount);
 
-    // Who did it, who paid, how
-    let employeeId = null;
+    // Who did it (one or several people, e.g. "Neema & Rehema"), who paid, how
+    const employeeIds = [];
     const staffName = text(v.staff);
     if (staffName) {
-      const e = lookups.staff.get(key(staffName)) || lookups.firstNames.get(key(staffName));
-      if (e) employeeId = e.id;
-      else if (lookups.firstNames.get(key(staffName)) === null) messages.push(`More than one staff member is called "${staffName}" — use the full name.`);
-      else messages.push(`No staff member called "${staffName}".`);
+      const whole = lookups.staff.get(key(staffName));
+      const names = whole ? [staffName] : staffName.split(STAFF_SEPARATOR).map((n) => n.trim()).filter(Boolean);
+      for (const name of names) {
+        const e = lookups.staff.get(key(name)) || lookups.firstNames.get(key(name));
+        if (e) {
+          if (!employeeIds.includes(e.id)) employeeIds.push(e.id);
+        } else if (lookups.firstNames.get(key(name)) === null) messages.push(`More than one staff member is called "${name}" — use the full name.`);
+        else messages.push(`No staff member called "${name}".`);
+      }
     }
     let method = 'cash';
     if (v.paymentMethod !== null && v.paymentMethod !== undefined) {
@@ -282,7 +289,7 @@ async function analyseSales(rows, ctx) {
       display,
       data: {
         date: when?.date, time, receipt: text(v.receipt)?.slice(0, 60) || null, phone, customerName: text(v.customerName)?.slice(0, 120) || null,
-        item, quantity, amount, employeeId, method, notes: text(v.notes)?.slice(0, 500) || null,
+        item, quantity, amount, employeeIds, method, notes: text(v.notes)?.slice(0, 500) || null,
       },
     };
     return row;
@@ -368,6 +375,7 @@ async function analyseSales(rows, ctx) {
 }
 
 async function saveSales(analysis, ctx) {
+  const decimals = Number(settings.get('financial.currency_decimals') ?? 0);
   const ready = analysis.rows.filter((r) => r.status === 'ready');
   const groups = new Map();
   for (const row of ready) {
@@ -415,14 +423,20 @@ async function saveSales(analysis, ctx) {
       );
       for (const r of group) {
         const d = r.data;
-        await db.query(
-          `INSERT INTO sale_items (sale_id, item_type, service_id, product_id, employee_id, description, quantity, unit_price, unit_cost,
-                                   line_total, net_amount, commission_rate, commission_amount)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
-          [sale.insertId, d.item.type, d.item.serviceId, d.item.productId, d.employeeId, d.item.name, d.quantity,
-            toNumber(D(d.amount).dividedBy(d.quantity).toDecimalPlaces(2)), d.item.cost, toNumber(d.amount), toNumber(d.amount)],
-          conn,
-        );
+        // History only: no commission; the value is shared between the staff named.
+        await insertLine(conn, {
+          saleId: sale.insertId,
+          branchId: ctx.branchId,
+          at: soldAt,
+          decimals,
+          withCommission: false,
+          line: {
+            type: d.item.type, serviceId: d.item.serviceId, productId: d.item.productId, employeeId: d.employeeIds[0] || null,
+            staff: d.employeeIds.map((id) => ({ id })), description: d.item.name, quantity: d.quantity,
+            unitPrice: toNumber(D(d.amount).dividedBy(d.quantity).toDecimalPlaces(2)), unitCost: d.item.cost,
+            lineTotal: D(d.amount), netAmount: D(d.amount), serviceRate: null, commissionRate: 0,
+          },
+        });
       }
       await db.query(
         "INSERT INTO payments (sale_id, branch_id, method, type, amount, reference, received_by, paid_at, created_at) VALUES (?, ?, ?, 'payment', ?, ?, ?, ?, ?)",
@@ -602,13 +616,14 @@ async function template(type, ctx) {
       'Item: the exact name of a service or product from the "Price list" sheet (the cell has a drop-down). Type is only needed if a service and a product share a name.',
       'Amount: what the customer paid for that row (quantity × price). Leave it empty to use today\'s price list.',
       'Customer phone / name: a registered phone links the sale to that customer. A new phone with a name adds the customer. Leave both empty for a walk-in.',
+      'Staff: who performed the service (drop-down). When several people did it together, write all their names, e.g. "Neema & Rehema" or "Neema, Rehema".',
       'Payment method: Cash, Mobile money (M-Pesa, Tigo Pesa, Airtel Money…), Card or Bank transfer. Default is Cash.',
       'Imported sales appear in reports and customer history. They do not change stock, earn loyalty points or create staff commission, because that already happened outside the system.',
     ], [
       ['Date', 'Time', 'Receipt no', 'Customer phone', 'Customer name', 'Type', 'Item', 'Staff', 'Quantity', 'Amount', 'Payment method', 'Notes'],
       ['02/09/2026', '10:30', 'R-1001', '0712345678', 'Asha Mrisho', 'Service', services[0]?.name || 'Haircut', staff[0]?.full_name || '', 1, Number(services[0]?.price || 15000), 'Mobile money', ''],
       ['02/09/2026', '10:30', 'R-1001', '0712345678', 'Asha Mrisho', 'Product', products[0]?.name || 'Shampoo', '', 1, Number(products[0]?.selling_price || 9000), 'Mobile money', ''],
-      ['02/09/2026', '15:00', 'R-1002', '', '', 'Service', services[1]?.name || 'Manicure', staff[1]?.full_name || '', 1, '', 'Cash', 'Walk-in'],
+      ['02/09/2026', '15:00', 'R-1002', '', '', 'Service', services[1]?.name || 'Manicure', [staff[1], staff[2]].filter(Boolean).map((e) => e.full_name.split(' ')[0]).join(' & '), 1, '', 'Cash', 'Walk-in, done by two people'],
     ]);
   }
   return Buffer.from(await wb.xlsx.writeBuffer());

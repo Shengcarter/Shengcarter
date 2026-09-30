@@ -19,13 +19,15 @@ const messaging = require('./messaging');
 const audit = require('./auditService');
 
 /**
- * Appointment scheduling. Every rule is enforced on the server:
- *   • the stylist must be active, bookable and in the current branch
- *   • every service must be active and assigned to the stylist
- *   • no overlap with the stylist's other appointments (plus buffer)
+ * Appointment scheduling. An appointment has one or more staff members (the
+ * first is the lead); some services need two people. Every rule is enforced
+ * on the server:
+ *   • each staff member must be active, bookable and in the current branch
+ *   • every service must be active and performed by at least one of them
+ *   • no overlap with any member's other appointments (plus buffer)
  *   • no overlap with the customer's other appointments
- *   • inside working hours / not on leave (when enforced in Settings)
- * The stylist's row is locked (SELECT … FOR UPDATE) while checking, so two
+ *   • inside every member's working hours / not on leave (when enforced)
+ * The staff rows are locked (SELECT … FOR UPDATE) while checking, so two
  * receptionists booking the same slot at the same moment cannot both succeed.
  */
 
@@ -67,7 +69,7 @@ async function getById(id, ctx) {
   const appointment = await model.findById(id);
   if (!appointment) throw ApiError.notFound('Appointment not found');
   const scope = ownScope(ctx);
-  if (appointment.branchId !== ctx.branchId || (scope && appointment.employeeUserId !== scope)) {
+  if (appointment.branchId !== ctx.branchId || (scope && !appointment.staff.some((member) => member.userId === scope))) {
     throw ApiError.notFound('Appointment not found');
   }
   return appointment;
@@ -85,17 +87,38 @@ async function list(filters, ctx) {
 
 // ---- Validation helpers ------------------------------------------------------------
 
-async function lockEmployee(conn, employeeId, branchId) {
-  const employee = await db.queryOne(
-    'SELECT id, full_name, branch_id, status, is_bookable, user_id FROM employees WHERE id = ? FOR UPDATE',
-    [employeeId],
+/** The team from a request: employeeIds (first = lead), or a single employeeId from older clients. */
+function teamIds(data, fallback = []) {
+  const ids = data.employeeIds?.length ? data.employeeIds : data.employeeId ? [data.employeeId] : fallback;
+  return [...new Set(ids)];
+}
+
+/**
+ * Lock and check the appointment's staff. Rows are locked in id order so two
+ * bookings for overlapping teams cannot deadlock; the result keeps the
+ * requested order (the first is the lead).
+ */
+async function lockTeam(conn, employeeIds, branchId) {
+  if (!employeeIds.length) throw ApiError.validation([{ field: 'employeeIds', message: 'Choose who will do the appointment' }]);
+  const rows = await db.query(
+    'SELECT id, full_name, branch_id, status, is_bookable, user_id FROM employees WHERE id IN (?) ORDER BY id FOR UPDATE',
+    [employeeIds],
     conn,
   );
-  if (!employee || employee.branch_id !== branchId) throw ApiError.validation([{ field: 'employeeId', message: 'Choose a stylist from this branch' }]);
-  if (employee.status !== 'active' || !employee.is_bookable) {
-    throw ApiError.validation([{ field: 'employeeId', message: `${employee.full_name} is not available for bookings` }]);
-  }
-  return employee;
+  return employeeIds.map((employeeId) => {
+    const employee = rows.find((r) => r.id === employeeId);
+    if (!employee || employee.branch_id !== branchId) throw ApiError.validation([{ field: 'employeeIds', message: 'Choose staff from this branch' }]);
+    if (employee.status !== 'active' || !employee.is_bookable) {
+      throw ApiError.validation([{ field: 'employeeIds', message: `${employee.full_name} is not available for bookings` }]);
+    }
+    return employee;
+  });
+}
+
+/** "Neema", "Neema & Rehema", "Neema, Rehema & Grace" (first names). */
+function joinNames(names) {
+  const first = names.map((n) => String(n).split(' ')[0]);
+  return first.length <= 1 ? first[0] || '' : `${first.slice(0, -1).join(', ')} & ${first[first.length - 1]}`;
 }
 
 async function loadCustomer(conn, customerId) {
@@ -104,8 +127,8 @@ async function loadCustomer(conn, customerId) {
   return customer;
 }
 
-/** Load services in the requested order and check the stylist performs them. */
-async function resolveServices(conn, serviceIds, employee) {
+/** Load services in the requested order and check someone in the team performs each one. */
+async function resolveServices(conn, serviceIds, team) {
   const unique = [...new Set(serviceIds)];
   const rows = await db.query('SELECT id, name, price, duration_minutes, is_active FROM services WHERE id IN (?)', [unique], conn);
   if (rows.length !== unique.length) throw ApiError.validation([{ field: 'serviceIds', message: 'One or more services do not exist' }]);
@@ -113,30 +136,33 @@ async function resolveServices(conn, serviceIds, employee) {
   if (inactive.length) throw ApiError.validation([{ field: 'serviceIds', message: `Not available: ${inactive.map((s) => s.name).join(', ')}` }]);
 
   const assigned = new Set(
-    (await db.query('SELECT service_id FROM employee_services WHERE employee_id = ? AND service_id IN (?)', [employee.id, unique], conn)).map((r) => r.service_id),
+    (await db.query('SELECT service_id FROM employee_services WHERE employee_id IN (?) AND service_id IN (?)', [team.map((e) => e.id), unique], conn)).map((r) => r.service_id),
   );
   const missing = rows.filter((s) => !assigned.has(s.id));
   if (missing.length) {
-    throw ApiError.validation([{ field: 'serviceIds', message: `${employee.full_name} does not perform: ${missing.map((s) => s.name).join(', ')}` }]);
+    const who = team.length === 1 ? `${team[0].full_name} does not perform` : 'Nobody in the chosen team performs';
+    throw ApiError.validation([{ field: 'serviceIds', message: `${who}: ${missing.map((s) => s.name).join(', ')}` }]);
   }
   return unique.map((sid) => rows.find((r) => r.id === sid));
 }
 
-async function assertSlotAvailable(conn, { employee, customerId, start, end, excludeId = 0, checkPast = true }) {
+async function assertSlotAvailable(conn, { team, customerId, start, end, excludeId = 0, checkPast = true }) {
   if (checkPast && start < new Date(Date.now() - PAST_TOLERANCE_MINUTES * 60_000)) {
     throw ApiError.validation([{ field: 'startTime', message: 'Appointments cannot be booked in the past' }]);
   }
-  if (settings.get('system.enforce_working_hours')) {
-    const hours = await scheduleService.isWithinWorkingHours(employee.id, start, end, conn);
-    if (!hours.ok) throw ApiError.validation([{ field: 'startTime', message: hours.reason }]);
-  }
   const buffer = Number(settings.get('system.appointment_buffer_minutes') || 0);
-  const clash = await model.findEmployeeConflict(conn, { employeeId: employee.id, start, end, excludeId, bufferMinutes: buffer });
-  if (clash) {
-    throw ApiError.conflict(
-      `${employee.full_name} is already booked ${fmtTime(clash.start_time)}–${fmtTime(clash.end_time)} (${clash.code}). Choose another time or stylist.`,
-      { code: 'DOUBLE_BOOKING', errors: [{ field: 'startTime', message: 'This time overlaps another appointment' }] },
-    );
+  for (const employee of team) {
+    if (settings.get('system.enforce_working_hours')) {
+      const hours = await scheduleService.isWithinWorkingHours(employee.id, start, end, conn);
+      if (!hours.ok) throw ApiError.validation([{ field: 'startTime', message: team.length > 1 ? `${employee.full_name}: ${hours.reason}` : hours.reason }]);
+    }
+    const clash = await model.findEmployeeConflict(conn, { employeeId: employee.id, start, end, excludeId, bufferMinutes: buffer });
+    if (clash) {
+      throw ApiError.conflict(
+        `${employee.full_name} is already booked ${fmtTime(clash.start_time)}–${fmtTime(clash.end_time)} (${clash.code}). Choose another time or other staff.`,
+        { code: 'DOUBLE_BOOKING', errors: [{ field: 'startTime', message: 'This time overlaps another appointment' }] },
+      );
+    }
   }
   const customerClash = await model.findCustomerConflict(conn, { customerId, start, end, excludeId });
   if (customerClash) {
@@ -153,30 +179,43 @@ function parseStart(value) {
   return start;
 }
 
-function messageVariables(appointment, customer, employeeName, services) {
+function messageVariables(appointment, customer, staffNames, services) {
   return {
     customer_name: customer.full_name.split(' ')[0],
     date: fmtDate(appointment.start),
     time: fmtTime(appointment.start),
-    stylist: employeeName.split(' ')[0],
+    stylist: joinNames(staffNames),
     code: appointment.code,
     services: services.map((s) => s.name).join(', '),
   };
+}
+
+/**
+ * In-app notification to every staff member of an appointment who has a user
+ * account (except the person doing the action). build(others) receives the
+ * other members' first names, e.g. "Rehema & Grace".
+ */
+async function notifyTeam(staff, ctx, build) {
+  for (const member of staff) {
+    if (!member.userId || member.userId === ctx?.userId) continue;
+    const others = joinNames(staff.filter((m) => m.id !== member.id).map((m) => m.fullName));
+    await notificationService.notifyUser(member.userId, build(others)).catch((err) => logger.error({ err }, 'Failed to notify staff'));
+  }
 }
 
 // ---- Commands -------------------------------------------------------------------------
 
 async function create(data, ctx) {
   const result = await db.withTransaction(async (conn) => {
-    const employee = await lockEmployee(conn, data.employeeId, ctx.branchId);
+    const team = await lockTeam(conn, teamIds(data), ctx.branchId);
     const customer = await loadCustomer(conn, data.customerId);
-    const services = await resolveServices(conn, data.serviceIds, employee);
+    const services = await resolveServices(conn, data.serviceIds, team);
     const totalDuration = services.reduce((sum, s) => sum + s.duration_minutes, 0);
     const totalPrice = toNumber(services.reduce((sum, s) => sum.plus(s.price), D(0)));
     const start = parseStart(data.startTime);
     const end = new Date(start.getTime() + totalDuration * 60_000);
 
-    await assertSlotAvailable(conn, { employee, customerId: customer.id, start, end });
+    await assertSlotAvailable(conn, { team, customerId: customer.id, start, end });
 
     const code = await nextCode(conn, 'appointment', 'APT-', 6);
     const status = data.status === 'confirmed' ? 'confirmed' : 'pending';
@@ -184,7 +223,7 @@ async function create(data, ctx) {
       code,
       branchId: ctx.branchId,
       customerId: customer.id,
-      employeeId: employee.id,
+      employeeId: team[0].id,
       start,
       end,
       status,
@@ -196,9 +235,10 @@ async function create(data, ctx) {
       createdBy: ctx.userId,
     });
     await model.replaceServices(conn, id, services);
+    await model.replaceStaff(conn, id, team.map((e) => e.id));
     await audit.record(ctx, {
       action: 'appointment.created', entityType: 'appointment', entityId: id,
-      description: `Booked ${code} for ${customer.full_name} with ${employee.full_name} on ${fmtDate(start)} at ${fmtTime(start)}`,
+      description: `Booked ${code} for ${customer.full_name} with ${team.map((e) => e.full_name).join(', ')} on ${fmtDate(start)} at ${fmtTime(start)}`,
     }, conn);
     // Walk-ins are already here, so they get no "please confirm" message and
     // no reminder. When the booking is already inside the reminder window, the
@@ -207,7 +247,7 @@ async function create(data, ctx) {
     const queued = walkIn ? [] : await messaging.notifyCustomer(
       'appointment_confirmation',
       customer,
-      messageVariables({ start, code }, customer, employee.full_name, services),
+      messageVariables({ start, code }, customer, team.map((e) => e.full_name), services),
       { branchId: ctx.branchId, relatedType: 'appointment', relatedId: id, createdBy: ctx.userId },
       conn,
     );
@@ -215,40 +255,40 @@ async function create(data, ctx) {
     if (walkIn || (queued.length && start.getTime() - Date.now() <= reminderHours * 3_600_000)) {
       await db.query('UPDATE appointments SET reminder_sent_at = UTC_TIMESTAMP() WHERE id = ?', [id], conn);
     }
-    return { id, code, employee, customer, start };
+    return { id, code, team, customer, start };
   });
 
-  if (result.employee.user_id && result.employee.user_id !== ctx.userId) {
-    await notificationService.notifyUser(result.employee.user_id, {
-      type: 'appointment.created',
-      category: 'appointment',
-      branchId: ctx.branchId,
-      title: 'New appointment',
-      message: `${result.customer.full_name} booked with you on ${fmtDate(result.start)} at ${fmtTime(result.start)} (${result.code}).`,
-      link: `/appointments?appointment=${result.id}`,
-    }).catch((err) => logger.error({ err }, 'Failed to notify stylist'));
-  }
+  await notifyTeam(result.team.map((e) => ({ id: e.id, fullName: e.full_name, userId: e.user_id })), ctx, (others) => ({
+    type: 'appointment.created',
+    category: 'appointment',
+    branchId: ctx.branchId,
+    title: 'New appointment',
+    message: `${result.customer.full_name} booked with you${others ? ` and ${others}` : ''} on ${fmtDate(result.start)} at ${fmtTime(result.start)} (${result.code}).`,
+    link: `/appointments?appointment=${result.id}`,
+  }));
   return getById(result.id, ctx);
 }
 
-/** Edit an appointment (customer, stylist, services, time, notes). */
+/** Edit an appointment (customer, staff, services, time, notes). */
 async function update(id, data, ctx) {
   const existing = await getById(id, ctx);
   if (!EDITABLE.includes(existing.status)) throw ApiError.badRequest(`A ${existing.status.replace('_', ' ')} appointment can no longer be edited`);
 
   await db.withTransaction(async (conn) => {
-    const employee = await lockEmployee(conn, data.employeeId || existing.employeeId, ctx.branchId);
+    const previousTeam = existing.staff.map((m) => m.id);
+    const team = await lockTeam(conn, teamIds(data, previousTeam), ctx.branchId);
     const customerId = data.customerId || existing.customerId;
     await loadCustomer(conn, customerId);
     const serviceIds = data.serviceIds || existing.services.map((s) => s.serviceId);
-    const services = await resolveServices(conn, serviceIds, employee);
+    const services = await resolveServices(conn, serviceIds, team);
     const totalDuration = services.reduce((sum, s) => sum + s.duration_minutes, 0);
     const totalPrice = toNumber(services.reduce((sum, s) => sum.plus(s.price), D(0)));
     const start = data.startTime ? parseStart(data.startTime) : new Date(existing.startTime);
     const end = new Date(start.getTime() + totalDuration * 60_000);
-    const timeChanged = start.getTime() !== new Date(existing.startTime).getTime() || employee.id !== existing.employeeId;
+    const teamChanged = [...previousTeam].sort().join() !== team.map((e) => e.id).sort().join();
+    const timeChanged = start.getTime() !== new Date(existing.startTime).getTime() || teamChanged;
 
-    await assertSlotAvailable(conn, { employee, customerId, start, end, excludeId: id, checkPast: timeChanged });
+    await assertSlotAvailable(conn, { team, customerId, start, end, excludeId: id, checkPast: timeChanged });
     await db.query(
       `UPDATE appointments SET customer_id = ?, employee_id = ?, start_time = ?, end_time = ?, notes = ?, source = ?,
               total_price = ?, total_duration = ?, reminder_sent_at = IF(?, NULL, reminder_sent_at),
@@ -256,27 +296,40 @@ async function update(id, data, ctx) {
               customer_delay_minutes = IF(?, NULL, customer_delay_minutes), customer_response_note = IF(?, NULL, customer_response_note)
        WHERE id = ?`,
       // A new time needs a new reminder, and the customer's earlier reply no longer applies.
-      [customerId, employee.id, start, end, data.notes !== undefined ? data.notes : existing.notes, data.source || existing.source,
+      [customerId, team[0].id, start, end, data.notes !== undefined ? data.notes : existing.notes, data.source || existing.source,
         totalPrice, totalDuration, ...Array(5).fill(timeChanged ? 1 : 0), id],
       conn,
     );
     await model.replaceServices(conn, id, services);
+    await model.replaceStaff(conn, id, team.map((e) => e.id));
     await audit.record(ctx, {
       action: timeChanged ? 'appointment.rescheduled' : 'appointment.updated',
       entityType: 'appointment',
       entityId: id,
       description: timeChanged
-        ? `Rescheduled ${existing.code} to ${fmtDate(start)} ${fmtTime(start)} with ${employee.full_name}`
+        ? `Rescheduled ${existing.code} to ${fmtDate(start)} ${fmtTime(start)} with ${team.map((e) => e.full_name).join(', ')}`
         : `Updated ${existing.code}`,
-      metadata: timeChanged ? { from: existing.startTime, to: start, fromEmployeeId: existing.employeeId, toEmployeeId: employee.id } : null,
+      metadata: timeChanged ? { from: existing.startTime, to: start, fromStaff: previousTeam, toStaff: team.map((e) => e.id) } : null,
     }, conn);
   });
   return getById(id, ctx);
 }
 
-/** Drag-and-drop move on the calendar: new start time and/or stylist. */
-async function reschedule(id, { startTime, employeeId }, ctx) {
-  return update(id, { startTime, employeeId }, ctx);
+/**
+ * Drag-and-drop move on the calendar: a new start time and/or moving one
+ * team member's part to another person (fromEmployeeId → employeeId). Older
+ * clients send only employeeId, which replaces the lead.
+ */
+async function reschedule(id, { startTime, employeeId, fromEmployeeId }, ctx) {
+  const existing = await getById(id, ctx);
+  let team = existing.staff.map((m) => m.id);
+  if (employeeId && !team.includes(employeeId)) {
+    const from = fromEmployeeId && team.includes(fromEmployeeId) ? fromEmployeeId : team[0];
+    team = team.map((memberId) => (memberId === from ? employeeId : memberId));
+  } else if (employeeId && fromEmployeeId && employeeId !== fromEmployeeId) {
+    throw ApiError.badRequest('That person is already on this appointment');
+  }
+  return update(id, { startTime, employeeIds: team }, ctx);
 }
 
 async function changeStatus(id, { status, reason }, ctx) {
@@ -320,22 +373,22 @@ async function changeStatus(id, { status, reason }, ctx) {
       await messaging.notifyCustomer(
         'appointment_cancelled',
         { id: appointment.customerId, full_name: appointment.customerName, phone: appointment.customerPhone, email: appointment.customerEmail, preferred_channel: appointment.customerPreferredChannel },
-        { customer_name: appointment.customerName.split(' ')[0], date: fmtDate(start), time: fmtTime(start), code: appointment.code, stylist: appointment.employeeName.split(' ')[0] },
+        { customer_name: appointment.customerName.split(' ')[0], date: fmtDate(start), time: fmtTime(start), code: appointment.code, stylist: joinNames(appointment.staff.map((m) => m.fullName)) },
         { branchId: ctx.branchId, relatedType: 'appointment', relatedId: id, createdBy: ctx.userId },
         conn,
       );
     }
   });
 
-  if (status === 'cancelled' && appointment.employeeUserId && appointment.employeeUserId !== ctx.userId) {
-    await notificationService.notifyUser(appointment.employeeUserId, {
+  if (status === 'cancelled') {
+    await notifyTeam(appointment.staff, ctx, () => ({
       type: 'appointment.cancelled',
       category: 'appointment',
       branchId: ctx.branchId,
       title: 'Appointment cancelled',
       message: `${appointment.code} with ${appointment.customerName} on ${fmtDate(appointment.startTime)} at ${fmtTime(appointment.startTime)} was cancelled.`,
       link: `/appointments?appointment=${id}`,
-    }).catch((err) => logger.error({ err }, 'Failed to notify stylist'));
+    }));
   }
   return getById(id, ctx);
 }
@@ -374,16 +427,14 @@ async function checkIn({ token, id }, ctx) {
     await audit.record(ctx, { action: 'appointment.checked_in', entityType: 'appointment', entityId: appointment.id, description: `${appointment.code} checked in (${appointment.customerName})` }, conn);
   });
 
-  if (appointment.employeeUserId && appointment.employeeUserId !== ctx.userId) {
-    await notificationService.notifyUser(appointment.employeeUserId, {
-      type: 'appointment.checked_in',
-      category: 'appointment',
-      branchId: ctx.branchId,
-      title: 'Customer has arrived',
-      message: `${appointment.customerName} checked in for ${appointment.code} at ${fmtTime(new Date())}.`,
-      link: `/appointments?appointment=${appointment.id}`,
-    }).catch(() => {});
-  }
+  await notifyTeam(appointment.staff, ctx, () => ({
+    type: 'appointment.checked_in',
+    category: 'appointment',
+    branchId: ctx.branchId,
+    title: 'Customer has arrived',
+    message: `${appointment.customerName} checked in for ${appointment.code} at ${fmtTime(new Date())}.`,
+    link: `/appointments?appointment=${appointment.id}`,
+  }));
   return getById(appointment.id, ctx);
 }
 
@@ -425,23 +476,44 @@ async function durationFor(serviceIds) {
   return Number(row.total) || 30;
 }
 
-/** Bookable time slots for one stylist on one business-local date. */
-async function availability({ employeeId, date, serviceIds, excludeId }, ctx) {
-  const employee = await db.queryOne('SELECT id, branch_id, full_name, status, is_bookable FROM employees WHERE id = ?', [employeeId]);
-  if (!employee || employee.branch_id !== ctx.branchId) throw ApiError.notFound('Stylist not found');
+/**
+ * Bookable time slots on one business-local date for one or more staff
+ * members: a slot is free only when every member works then and is free.
+ */
+async function availability({ employeeId, employeeIds, date, serviceIds, excludeId }, ctx) {
+  const ids = teamIds({ employeeId, employeeIds });
+  const employees = ids.length ? await db.query('SELECT id, branch_id, full_name FROM employees WHERE id IN (?)', [ids]) : [];
+  if (!ids.length || employees.length !== ids.length || employees.some((e) => e.branch_id !== ctx.branchId)) throw ApiError.notFound('Stylist not found');
   const duration = await durationFor(serviceIds);
   const interval = Number(settings.get('system.slot_interval_minutes') || 15);
   const buffer = Number(settings.get('system.appointment_buffer_minutes') || 0);
   const enforce = settings.get('system.enforce_working_hours');
 
-  let window = await scheduleService.getDayWindow(employeeId, date);
-  if (!window.working && !enforce) {
-    const day = DateTime.fromISO(date, { zone: timezone() });
-    window = { working: true, start: day.set({ hour: 7 }), end: day.set({ hour: 21 }) };
+  // The hours everyone works (the overlap of their working windows).
+  let window = null;
+  for (const id of ids) {
+    let own = await scheduleService.getDayWindow(id, date);
+    if (!own.working && !enforce) {
+      const day = DateTime.fromISO(date, { zone: timezone() });
+      own = { working: true, start: day.set({ hour: 7 }), end: day.set({ hour: 21 }) };
+    }
+    if (!own.working) {
+      const name = employees.find((e) => e.id === id).full_name;
+      return { working: false, reason: ids.length > 1 ? `${name}: ${own.reason}` : own.reason, duration, slots: [], busy: [] };
+    }
+    window = window ? { working: true, start: DateTime.max(window.start, own.start), end: DateTime.min(window.end, own.end) } : own;
   }
-  if (!window.working) return { working: false, reason: window.reason, duration, slots: [], busy: [] };
+  if (window.end <= window.start) {
+    return { working: false, reason: 'the chosen staff have no working hours in common on this day', duration, slots: [], busy: [] };
+  }
 
-  const busy = await model.busyIntervals(employeeId, window.start.toJSDate(), window.end.toJSDate(), excludeId || 0);
+  const busy = [];
+  for (const id of ids) {
+    for (const b of await model.busyIntervals(id, window.start.toJSDate(), window.end.toJSDate(), excludeId || 0)) {
+      if (!busy.some((x) => x.id === b.id)) busy.push(b);
+    }
+  }
+  busy.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
   const now = Date.now();
   const slots = [];
   for (let t = window.start; t.plus({ minutes: duration }) <= window.end; t = t.plus({ minutes: interval })) {
@@ -503,27 +575,29 @@ async function sendDueReminders() {
   const hours = Number(settings.get('notifications.reminder_hours_before') || 24);
   const due = await db.query(
     `SELECT a.id, a.code, a.branch_id, a.start_time, c.id AS customer_id, c.full_name, c.phone, c.email, c.preferred_channel,
-            e.full_name AS employee_name, e.user_id AS employee_user_id,
             (SELECT GROUP_CONCAT(aps.service_name ORDER BY aps.sort_order SEPARATOR ', ') FROM appointment_services aps WHERE aps.appointment_id = a.id) AS services
-     FROM appointments a JOIN customers c ON c.id = a.customer_id JOIN employees e ON e.id = a.employee_id
+     FROM appointments a JOIN customers c ON c.id = a.customer_id
      WHERE a.status IN ('pending','confirmed') AND a.reminder_sent_at IS NULL
        AND a.start_time > UTC_TIMESTAMP() AND a.start_time <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? HOUR)
      LIMIT 200`,
     [hours],
   );
+  const teams = await model.staffFor(due.map((a) => a.id));
   for (const a of due) {
+    const staff = teams.get(a.id) || [];
     await db.withTransaction(async (conn) => {
       const claimed = await db.query('UPDATE appointments SET reminder_sent_at = UTC_TIMESTAMP() WHERE id = ? AND reminder_sent_at IS NULL', [a.id], conn);
       if (!claimed.affectedRows) return;
       await messaging.notifyCustomer(
         'appointment_reminder',
         { id: a.customer_id, full_name: a.full_name, phone: a.phone, email: a.email, preferred_channel: a.preferred_channel },
-        { customer_name: a.full_name.split(' ')[0], date: fmtDate(a.start_time), time: fmtTime(a.start_time), stylist: a.employee_name.split(' ')[0], code: a.code, services: a.services },
+        { customer_name: a.full_name.split(' ')[0], date: fmtDate(a.start_time), time: fmtTime(a.start_time), stylist: joinNames(staff.map((m) => m.fullName)), code: a.code, services: a.services },
         { branchId: a.branch_id, relatedType: 'appointment', relatedId: a.id },
         conn,
       );
-      if (a.employee_user_id) {
-        await notificationService.notifyUser(a.employee_user_id, {
+      for (const member of staff) {
+        if (!member.userId) continue;
+        await notificationService.notifyUser(member.userId, {
           type: 'appointment.reminder',
           category: 'appointment',
           branchId: a.branch_id,
@@ -540,6 +614,7 @@ async function sendDueReminders() {
 module.exports = {
   fmtDate,
   fmtTime,
+  joinNames,
   TRANSITIONS,
   getById,
   calendar,

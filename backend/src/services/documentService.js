@@ -219,7 +219,8 @@ function drawReceipt(doc, sale) {
 
   for (const item of sale.items) {
     doc.font('Helvetica-Bold').fontSize(7.5).text(item.description, margin, doc.y, { width: w });
-    const detail = `${item.quantity} × ${formatMoney(item.unitPrice)}${item.employeeName ? `  (${item.employeeName.split(' ')[0]})` : ''}`;
+    const staff = item.staff?.length ? item.staff.map((m) => m.fullName.split(' ')[0]).join(' & ') : item.employeeName?.split(' ')[0];
+    const detail = `${item.quantity} × ${formatMoney(item.unitPrice)}${staff ? `  (${staff})` : ''}`;
     row(detail, formatMoney(item.lineTotal));
   }
   rule();

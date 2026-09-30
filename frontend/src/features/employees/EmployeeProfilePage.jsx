@@ -194,7 +194,7 @@ export default function EmployeeProfilePage() {
     { value: 'schedule', label: 'Schedule' },
     { value: 'services', label: 'Services', count: e.services.length },
     ...(can(['leave.manage', 'employees.view']) ? [{ value: 'leave', label: 'Leave' }] : []),
-    ...(can('payroll.manage') ? [{ value: 'payroll', label: 'Salary & commission' }] : []),
+    ...(can('payroll.manage') ? [{ value: 'payroll', label: 'Commission payouts' }] : []),
   ];
 
   const uploadPhoto = async (file) => {
@@ -251,9 +251,8 @@ export default function EmployeeProfilePage() {
           </div>
         </div>
         <dl className="grid grid-cols-2 gap-4 sm:w-64">
-          <Detail label="Commission">{e.commissionRate}%</Detail>
+          <Detail label="Paid by">Commission, {e.commissionRate}%</Detail>
           <Detail label="Since">{formatDate(e.employmentDate)}</Detail>
-          {can(['employees.manage', 'payroll.manage']) ? <Detail label="Salary">{formatMoney(e.salary)}</Detail> : null}
           <Detail label="Login">{e.userEmail ? e.userRole : 'None'}</Detail>
         </dl>
         {manage ? (

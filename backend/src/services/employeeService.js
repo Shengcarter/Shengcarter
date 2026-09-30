@@ -72,7 +72,8 @@ async function update(id, data, ctx) {
   await assertServices(data.serviceIds);
   if (data.branchId && data.branchId !== existing.branchId) {
     const upcoming = await db.queryOne(
-      "SELECT COUNT(*) AS total FROM appointments WHERE employee_id = ? AND start_time > UTC_TIMESTAMP() AND status IN ('pending','confirmed')",
+      `SELECT COUNT(*) AS total FROM appointment_staff ast JOIN appointments a ON a.id = ast.appointment_id
+       WHERE ast.employee_id = ? AND a.start_time > UTC_TIMESTAMP() AND a.status IN ('pending','confirmed')`,
       [id],
     );
     if (Number(upcoming.total)) throw ApiError.conflict('Reassign or cancel this employee\'s upcoming appointments before moving them to another branch');
@@ -80,13 +81,11 @@ async function update(id, data, ctx) {
   await db.withTransaction(async (conn) => {
     await employeeModel.update(id, prepare(data), conn);
     if (data.serviceIds) await employeeModel.replaceServices(id, [...new Set(data.serviceIds)], conn);
-    const salaryChanged = data.salary !== undefined && Number(data.salary) !== Number(existing.salary);
     const commissionChanged = data.commissionRate !== undefined && Number(data.commissionRate) !== Number(existing.commissionRate);
     await audit.record(ctx, {
       action: 'employee.updated', entityType: 'employee', entityId: id, description: `Updated employee ${existing.fullName}`,
       metadata: {
         fields: Object.keys(data),
-        ...(salaryChanged ? { salary: { from: existing.salary, to: data.salary } } : {}),
         ...(commissionChanged ? { commissionRate: { from: existing.commissionRate, to: data.commissionRate } } : {}),
       },
     }, conn);
@@ -98,7 +97,8 @@ async function update(id, data, ctx) {
 async function remove(id, ctx) {
   const employee = await getById(id, ctx);
   const upcoming = await db.queryOne(
-    "SELECT COUNT(*) AS total FROM appointments WHERE employee_id = ? AND start_time > UTC_TIMESTAMP() AND status IN ('pending','confirmed')",
+    `SELECT COUNT(*) AS total FROM appointment_staff ast JOIN appointments a ON a.id = ast.appointment_id
+       WHERE ast.employee_id = ? AND a.start_time > UTC_TIMESTAMP() AND a.status IN ('pending','confirmed')`,
     [id],
   );
   if (Number(upcoming.total)) throw ApiError.conflict('This employee has upcoming appointments. Reassign or cancel them first.');
@@ -133,7 +133,9 @@ async function updatePhoto(id, publicPath, ctx) {
 /**
  * Performance statistics for a date range (business-local dates):
  * services completed, revenue generated, commission earned, customers served,
- * average service value, appointment outcomes and attendance.
+ * average service value, appointment outcomes and attendance. A service done
+ * together with others counts for each person, with their equal share of its
+ * value (sale_item_staff), so staff figures add up to the salon's total.
  */
 async function performance(id, { from, to }, ctx) {
   await getById(id, ctx);
@@ -144,10 +146,10 @@ async function performance(id, { from, to }, ctx) {
 
   const [sales, commission, appointments, attendance, daily, topServices] = await Promise.all([
     db.queryOne(
-      `SELECT COUNT(*) AS services_completed, COALESCE(SUM(si.net_amount), 0) AS revenue,
+      `SELECT COUNT(*) AS services_completed, COALESCE(SUM(sis.revenue_share), 0) AS revenue,
               COUNT(DISTINCT s.customer_id) AS customers
-       FROM sale_items si JOIN sales s ON s.id = si.sale_id
-       WHERE si.employee_id = ? AND si.item_type = 'service' AND s.status = 'completed'
+       FROM sale_item_staff sis JOIN sale_items si ON si.id = sis.sale_item_id JOIN sales s ON s.id = si.sale_id
+       WHERE sis.employee_id = ? AND si.item_type = 'service' AND s.status = 'completed'
          AND s.sold_at >= ? AND s.sold_at < ?`,
       [id, range.start, range.end],
     ),
@@ -160,7 +162,8 @@ async function performance(id, { from, to }, ctx) {
     db.queryOne(
       `SELECT COUNT(*) AS total, SUM(status = 'completed') AS completed, SUM(status = 'cancelled') AS cancelled,
               SUM(status = 'no_show') AS no_show
-       FROM appointments WHERE employee_id = ? AND start_time >= ? AND start_time < ?`,
+       FROM appointment_staff ast JOIN appointments a ON a.id = ast.appointment_id
+       WHERE ast.employee_id = ? AND a.start_time >= ? AND a.start_time < ?`,
       [id, range.start, range.end],
     ),
     db.queryOne(
@@ -171,16 +174,16 @@ async function performance(id, { from, to }, ctx) {
       [id, start, end],
     ),
     db.query(
-      `SELECT DATE(CONVERT_TZ(s.sold_at, '+00:00', ?)) AS day, COALESCE(SUM(si.net_amount), 0) AS revenue, COUNT(*) AS services
-       FROM sale_items si JOIN sales s ON s.id = si.sale_id
-       WHERE si.employee_id = ? AND si.item_type = 'service' AND s.status = 'completed' AND s.sold_at >= ? AND s.sold_at < ?
+      `SELECT DATE(CONVERT_TZ(s.sold_at, '+00:00', ?)) AS day, COALESCE(SUM(sis.revenue_share), 0) AS revenue, COUNT(*) AS services
+       FROM sale_item_staff sis JOIN sale_items si ON si.id = sis.sale_item_id JOIN sales s ON s.id = si.sale_id
+       WHERE sis.employee_id = ? AND si.item_type = 'service' AND s.status = 'completed' AND s.sold_at >= ? AND s.sold_at < ?
        GROUP BY day ORDER BY day`,
       [offset, id, range.start, range.end],
     ),
     db.query(
-      `SELECT si.description AS name, COUNT(*) AS count, COALESCE(SUM(si.net_amount), 0) AS revenue
-       FROM sale_items si JOIN sales s ON s.id = si.sale_id
-       WHERE si.employee_id = ? AND si.item_type = 'service' AND s.status = 'completed' AND s.sold_at >= ? AND s.sold_at < ?
+      `SELECT si.description AS name, COUNT(*) AS count, COALESCE(SUM(sis.revenue_share), 0) AS revenue
+       FROM sale_item_staff sis JOIN sale_items si ON si.id = sis.sale_item_id JOIN sales s ON s.id = si.sale_id
+       WHERE sis.employee_id = ? AND si.item_type = 'service' AND s.status = 'completed' AND s.sold_at >= ? AND s.sold_at < ?
        GROUP BY si.description ORDER BY revenue DESC LIMIT 5`,
       [id, range.start, range.end],
     ),
