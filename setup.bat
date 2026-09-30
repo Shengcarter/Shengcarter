@@ -35,6 +35,7 @@ if errorlevel 2 (
   echo.
   echo  Notepad will open the settings file. Fill in at least:
   echo    DATABASE_PASSWORD  - the MySQL password for the DATABASE_USER account
+  echo    ADMIN_NAME         - the owner's name ^(the dashboard greets you by it^)
   echo    ADMIN_EMAIL        - the owner's sign-in email
   echo    ADMIN_PASSWORD     - a first password ^(8+ characters, with letters and numbers^)
   echo  Save the file, close Notepad, and setup will continue.

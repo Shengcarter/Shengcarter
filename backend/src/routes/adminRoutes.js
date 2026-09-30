@@ -11,6 +11,7 @@ const v = require('../validators/userValidators');
 
 // ---- /api/users -------------------------------------------------------------
 const userRouter = Router();
+userRouter.patch('/me', validate({ body: v.updateMe }), users.updateMe);
 userRouter.post('/me/avatar', singleUpload('avatar', 'users'), users.uploadMyAvatar);
 userRouter.use(requirePermission('users.manage'));
 userRouter.get('/', validate({ query: v.listUsers }), users.list);

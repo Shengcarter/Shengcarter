@@ -227,6 +227,7 @@ Adjustment types: `stock_in`, `stock_out`, `adjustment` (counted quantity), `dam
 | --- | --- | --- |
 | GET / POST / PATCH | `/users[/:id]` | `users.manage` |
 | POST | `/users/:id/reset-password`, `/users/:id/unlock` | `users.manage` |
+| PATCH | `/users/me` — own `fullName` and `phone` (the dashboard greets people by this name) | signed in |
 | POST | `/users/me/avatar` | signed in |
 | GET / POST / PATCH / DELETE | `/roles[/:id]`, GET `/roles/permissions` | `roles.manage` |
 | GET / POST / PATCH | `/branches[/:id]` | `branches.manage` |

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Camera } from 'lucide-react';
 import { Avatar, Card, Detail, PageHeader, Tabs } from '../components/ui';
 import { ChangePasswordForm } from '../features/auth/ChangePasswordForm';
+import { MyDetailsForm } from '../features/auth/MyDetailsForm';
 import { useAuthStore } from '../store/authStore';
 import { http } from '../api/client';
 import { reloadSession } from '../features/auth/api';
@@ -65,13 +66,16 @@ export default function ProfilePage() {
               <p className="text-sm text-muted">{user?.email}</p>
             </div>
           </div>
-          <dl className="mt-8 grid gap-5 sm:grid-cols-2">
+          <dl className="mt-8 grid gap-5 sm:grid-cols-3">
             <Detail label="Role">{user?.role?.name}</Detail>
             <Detail label="Branch">{branches.find((b) => b.id === user?.branchId)?.name || 'Default branch'}</Detail>
-            <Detail label="Phone">{user?.phone}</Detail>
             <Detail label="Employee profile">{user?.employeeId ? 'Linked' : 'Not linked'}</Detail>
           </dl>
-          <p className="mt-6 text-xs text-muted">To change your name, email or role, ask an administrator.</p>
+          <div className="mt-8 border-t border-line pt-6">
+            <h3 className="mb-4 font-semibold">Your details</h3>
+            <MyDetailsForm key={user?.id} user={user} />
+          </div>
+          <p className="mt-6 text-xs text-muted">To change your email or role, ask an administrator.</p>
         </Card>
       ) : (
         <Card className="p-6">

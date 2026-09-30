@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
+import { useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { AlertCircle, LogIn } from 'lucide-react';
@@ -20,6 +21,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const sessionExpired = useAuthStore((s) => s.sessionExpired);
+  const queryClient = useQueryClient();
   const [serverError, setServerError] = useState(null);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
@@ -30,6 +32,10 @@ export default function LoginPage() {
   const onSubmit = async (values) => {
     setServerError(null);
     try {
+      // Drop anything loaded for the previous person (e.g. after their session expired on this device),
+      // so the dashboard and every page show the account that is signing in. Done before the session
+      // is set, so no page starts from the old data.
+      queryClient.clear();
       const session = await login(values);
       const next = location.state?.from?.pathname || '/';
       navigate(session.user.mustChangePassword ? '/change-password' : next, { replace: true });

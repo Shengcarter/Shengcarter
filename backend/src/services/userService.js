@@ -112,6 +112,22 @@ async function unlock(id, ctx) {
   await audit.record(ctx, { action: 'user.unlocked', entityType: 'user', entityId: id, description: `Unlocked ${user.fullName}` });
 }
 
+/** A person updates their own name and phone, e.g. so the dashboard greets them by name. */
+async function updateMe(userId, { fullName, phone }, ctx) {
+  const existing = await getById(userId);
+  await db.withTransaction(async (conn) => {
+    await userModel.update(userId, { fullName, phone }, conn);
+    await audit.record(ctx, {
+      action: 'user.updated',
+      entityType: 'user',
+      entityId: userId,
+      description: existing.fullName === fullName ? 'Updated own details' : `Changed own name from ${existing.fullName} to ${fullName}`,
+      metadata: { fields: phone === undefined ? ['fullName'] : ['fullName', 'phone'] },
+    }, conn);
+  });
+  return getById(userId);
+}
+
 async function updateAvatar(userId, publicPath, ctx) {
   const user = await getById(userId);
   await userModel.update(userId, { avatar: publicPath });
@@ -119,4 +135,4 @@ async function updateAvatar(userId, publicPath, ctx) {
   return user.avatar;
 }
 
-module.exports = { list: userModel.list, getById, create, update, resetPassword, unlock, updateAvatar };
+module.exports = { list: userModel.list, getById, create, update, updateMe, resetPassword, unlock, updateAvatar };

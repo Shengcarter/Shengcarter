@@ -15,14 +15,10 @@ import { useAuthStore } from '../../store/authStore';
 import { employeeApi } from '../employees/api';
 import { useDashboard, useInsights } from '../reports/api';
 import { cn } from '../../utils/cn';
+import { greetingName, timeOfDayGreeting } from '../../utils/greeting';
 
 const METHOD_LABELS = { cash: 'Cash', mobile_money: 'Mobile money', card: 'Card', bank_transfer: 'Bank transfer' };
 const METHOD_ORDER = ['cash', 'mobile_money', 'card', 'bank_transfer'];
-
-function greeting() {
-  const hour = nowInBusinessZone().hour;
-  return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-}
 
 function QuickActions() {
   const can = usePermission();
@@ -399,10 +395,23 @@ export default function DashboardPage() {
   const dashboard = useDashboard();
   const d = dashboard.data;
   const today = useMemo(() => nowInBusinessZone().toFormat('cccc, dd LLLL yyyy'), []);
+  const greeting = timeOfDayGreeting(nowInBusinessZone().hour);
+  const name = greetingName(user?.fullName);
 
   return (
     <div>
-      <PageHeader title={`${greeting()}, ${user?.fullName?.split(' ')[0] || ''}`} description={today} actions={<QuickActions />} />
+      <PageHeader
+        title={name ? `${greeting}, ${name}` : greeting}
+        description={[today, user?.role?.name].filter(Boolean).join(' · ')}
+        actions={<QuickActions />}
+      >
+        {name ? null : (
+          <p className="mt-1 text-sm">
+            <Link to="/profile" className="font-medium text-accent hover:underline">Add your name</Link>
+            <span className="text-muted"> so the dashboard greets you personally.</span>
+          </p>
+        )}
+      </PageHeader>
       {dashboard.isPending ? <DashboardSkeleton /> : dashboard.isError ? <ErrorState error={dashboard.error} onRetry={dashboard.refetch} /> : (
         <>
           {d.me ? <MyDay me={d.me} /> : null}

@@ -13,7 +13,7 @@ node scripts/configure-env.js
 status=$?
 set -e
 if [ "$status" -eq 2 ]; then
-  echo "Edit .env (DATABASE_PASSWORD, ADMIN_EMAIL, ADMIN_PASSWORD), then run this script again."
+  echo "Edit .env (DATABASE_PASSWORD, ADMIN_NAME, ADMIN_EMAIL, ADMIN_PASSWORD), then run this script again."
   exit 1
 fi
 

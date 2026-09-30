@@ -152,7 +152,7 @@ All configuration lives in one `.env` file in the project root (copy [`.env.exam
 | `APP_ENCRYPTION_KEY` | Optional key for integration secrets saved in Settings (defaults to one derived from `JWT_SECRET`) | – |
 | `JWT_ACCESS_EXPIRES_IN`, `REFRESH_TOKEN_DAYS`, `SESSION_HOURS` | Session lifetimes | `15m`, `30`, `12` |
 | `BCRYPT_ROUNDS`, `LOGIN_MAX_ATTEMPTS`, `LOGIN_LOCK_MINUTES` | Password hashing cost and lockout policy | `12`, `5`, `15` |
-| `ADMIN_NAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` | First Super Admin, created by `seed` | – |
+| `ADMIN_NAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` | First Super Admin, created by `seed` (the name is used in the dashboard greeting; it can be changed later under My profile) | – |
 | `SEED_DEMO_DATA`, `SEED_DEMO_ACTIVITY`, `DEMO_PASSWORD` | Demo data switches and demo account password | `false`, `true`, – |
 | `SMTP_HOST` / `_PORT` / `_SECURE` / `_USER` / `_PASSWORD`, `EMAIL_FROM` | Email delivery | – |
 | `SMS_USERNAME`, `SMS_API_KEY` | Africa's Talking SMS | – |

@@ -37,6 +37,9 @@ const users = {
     await userService.unlock(req.params.id, req.ctx);
     sendSuccess(res, null, 'Account unlocked');
   },
+  async updateMe(req, res) {
+    sendSuccess(res, await userService.updateMe(req.user.id, req.body, req.ctx), 'Your details have been saved');
+  },
   async uploadMyAvatar(req, res) {
     if (!req.file) throw ApiError.validation([{ field: 'avatar', message: 'Choose an image to upload' }]);
     const previous = await userService.updateAvatar(req.user.id, req.file.publicPath, req.ctx);
