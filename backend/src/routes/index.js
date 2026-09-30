@@ -17,6 +17,8 @@ const appointmentRoutes = require('./appointmentRoutes');
 const loyaltyRoutes = require('./loyaltyRoutes');
 const commerce = require('./commerceRoutes');
 const insight = require('./reportRoutes');
+const importRoutes = require('./importRoutes');
+const webhookRoutes = require('./webhookRoutes');
 
 /**
  * API route map. Everything below `authenticate` requires a valid access token;
@@ -37,6 +39,7 @@ router.get('/health', async (_req, res) => {
 
 router.use('/auth', authRoutes);
 router.use('/public', publicRoutes);
+router.use('/webhooks', webhookRoutes);
 
 router.use(authenticate);
 
@@ -65,6 +68,7 @@ router.use('/sales', commerce.saleRouter);
 router.use('/payments', commerce.paymentRouter);
 router.use('/expenses', commerce.expenseRouter);
 router.use('/payroll', commerce.payrollRouter);
+router.use('/imports', importRoutes);
 router.use('/dashboard', insight.dashboardRouter);
 router.use('/reports', insight.reportRouter);
 router.use('/insights', insight.insightRouter);

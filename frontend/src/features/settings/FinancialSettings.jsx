@@ -61,9 +61,9 @@ export function FinancialSettings({ values }) {
         <Select
           label="Tax mode"
           options={[
+            { value: 'none', label: 'No tax — charge exactly the listed price' },
             { value: 'exclusive', label: 'Added on top of prices' },
             { value: 'inclusive', label: 'Included in prices' },
-            { value: 'none', label: 'No tax' },
           ]}
           error={errors.tax_mode?.message}
           {...register('tax_mode')}

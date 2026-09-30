@@ -98,7 +98,7 @@ scripts/                configure-env.js (first-run .env), linux/ shell scripts
 ## 4. Core rules
 
 ### Money
-All amounts are `DECIMAL(14,2)` in MySQL and calculated with **decimal.js** (`utils/money.js`) — never JavaScript floating point. The server recalculates every price, discount, tax, total, change and balance from the database; totals sent by the browser are ignored. The POS formula lives in one pure, unit-tested module (`services/pricing.js`): line amounts are rounded to the currency's decimals, invoice discounts and loyalty redemptions are allocated across lines (the last line absorbs the rounding remainder, so line amounts always add up to the total exactly), and tax is inclusive or exclusive as configured in Settings. Receipts, invoices and reports read these stored figures, so they always agree.
+All amounts are `DECIMAL(14,2)` in MySQL and calculated with **decimal.js** (`utils/money.js`) — never JavaScript floating point. The server recalculates every price, discount, tax, total, change and balance from the database; totals sent by the browser are ignored. The POS formula lives in one pure, unit-tested module (`services/pricing.js`): line amounts are rounded to the currency's decimals, invoice discounts and loyalty redemptions are allocated across lines (the last line absorbs the rounding remainder, so line amounts always add up to the total exactly), and tax is off by default (the listed price is what the customer pays) or inclusive or exclusive as configured in Settings. Receipts, invoices and reports read these stored figures, so they always agree.
 
 ### Time
 The database session time zone is UTC and every `DATETIME` is stored in UTC. The business time zone (Settings, default `Africa/Dar_es_Salaam`) is applied with luxon when interpreting user input (e.g. "today", a booking at 14:00) and in SQL with `CONVERT_TZ(column, '+00:00', <validated offset>)` when grouping reports by local day. The browser formats with the same business time zone, not the device's.
@@ -142,7 +142,7 @@ See [SECURITY.md](SECURITY.md) for the complete list of controls.
 
 ## 6. Permissions
 
-44 permission codes in 13 modules (`module.action`, e.g. `pos.refund`, `reports.financial`, `appointments.view_own`). Roles are sets of permissions editable in *Settings → Roles & permissions*; the Super Admin role always has all of them. The web app hides navigation and buttons the user cannot use, but **the API is the enforcement point** — every route declares its permissions, and the tests check each default role against the modules it may and may not reach, plus record-level rules (a stylist's own appointments, branch isolation).
+46 permission codes in 13 modules (`module.action`, e.g. `pos.refund`, `reports.financial`, `appointments.view_own`). Roles are sets of permissions editable in *Settings → Roles & permissions*; the Super Admin role always has all of them. The web app hides navigation and buttons the user cannot use, but **the API is the enforcement point** — every route declares its permissions, and the tests check each default role against the modules it may and may not reach, plus record-level rules (a stylist's own appointments, branch isolation).
 
 To add a permission: insert it in `database/seed.sql` (and a migration for existing installs), grant it to roles there, use `requirePermission('module.action')` on the route, and add it to the navigation guard in `frontend/src/routes`.
 
@@ -166,7 +166,7 @@ To add a permission: insert it in `database/seed.sql` (and a migration for exist
 
 ## 8. Messaging and AI providers
 
-**Messaging** (`services/messaging`): each channel has a provider module — email (SMTP via nodemailer), SMS (Africa's Talking, Twilio), WhatsApp (Meta Cloud API, Twilio). Credentials come from *Settings → Integrations* or `.env`. Without credentials the provider is `log`: the message is recorded in `message_logs` as not sent, and nothing fails. Messages are queued, sent by the job with retries, and every attempt is logged. Promotional messages go only to customers who opted in.
+**Messaging** (`services/messaging`): each channel has a provider module — email (SMTP via nodemailer), SMS (Africa's Talking, Twilio), WhatsApp (Meta Cloud API, Twilio). Credentials come from *Settings → Integrations* or `.env`. Without credentials the provider is `log`: the message is recorded in `message_logs` as not sent, and nothing fails. Messages are queued, sent by the job with retries, and every attempt is logged. Promotional messages go only to customers who opted in. WhatsApp messages the salon starts are sent as Meta-approved templates when one is configured per message type: the queue stores the values in placeholder order (`template_params`) and the provider sends them as `{{1}}`, `{{2}}`, …. Customer replies arrive at the signed webhook (`routes/webhookRoutes.js`) and `services/messaging/replies.js` classifies them (English and Swahili), updates the appointment, answers the customer and alerts staff; incoming messages are stored in `message_logs` with `direction = 'inbound'`.
 
 **Insights** (`services/insightService.js`): a rule engine computes trends, risks and opportunities from aggregated figures (sales vs. previous period, retention, low stock, top/bottom services, staff utilisation, overdue balances). If `AI_PROVIDER=anthropic` and `AI_API_KEY` are set, the same aggregated figures (no customer names or phone numbers) are sent to the Claude API for a written summary; on any error or refusal the rule-based text is used.
 
@@ -205,7 +205,7 @@ Profit & loss is on a cash basis: net sales − cost of goods sold (purchase pri
 
 | Suite | Tool | Covers |
 | --- | --- | --- |
-| `backend/tests/*.test.js` | Jest + Supertest | authentication and sessions, permissions per role, customer CRUD, appointment conflicts, POS sales/payments/refunds and concurrency, inventory ledger, reports and exports, financial calculations, backups |
+| `backend/tests/*.test.js` | Jest + Supertest | authentication and sessions, permissions per role, customer CRUD, appointment conflicts, POS sales/payments/refunds and concurrency, Excel/CSV imports, WhatsApp messages and replies, inventory ledger, reports and exports, financial calculations, backups |
 | `frontend/src/**/*.test.js` | Vitest | formatting and report period helpers |
 
 Backend tests create a throw-away database `zola_stylish_test` (dropped and recreated per run) using the same schema, migrations and seed as production. Run `npm test` in `backend/` and `frontend/`.

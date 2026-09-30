@@ -38,6 +38,7 @@ INSERT INTO permissions (code, module, description) VALUES
   ('customers.create',         'customers',     'Register customers'),
   ('customers.update',         'customers',     'Edit customers and add notes'),
   ('customers.delete',         'customers',     'Delete customers'),
+  ('customers.import',         'customers',     'Import customers from Excel or CSV files'),
   ('appointments.view',        'appointments',  'View all appointments'),
   ('appointments.view_own',    'appointments',  'View appointments assigned to me'),
   ('appointments.create',      'appointments',  'Book appointments'),
@@ -57,6 +58,7 @@ INSERT INTO permissions (code, module, description) VALUES
   ('pos.create',               'pos',           'Use the point of sale and record payments'),
   ('pos.refund',               'pos',           'Refund sales'),
   ('sales.view',               'pos',           'View sales, invoices and payments'),
+  ('sales.import',             'pos',           'Import past sales from Excel or CSV files'),
   ('inventory.view',           'inventory',     'View products and stock'),
   ('inventory.manage',         'inventory',     'Manage products and adjust stock'),
   ('suppliers.view',           'suppliers',     'View suppliers'),
@@ -88,7 +90,7 @@ SELECT r.id, p.id FROM roles r CROSS JOIN permissions p WHERE r.slug = 'super_ad
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN (
   'dashboard.view',
-  'customers.view', 'customers.create', 'customers.update',
+  'customers.view', 'customers.create', 'customers.update', 'customers.import',
   'appointments.view', 'appointments.create', 'appointments.update', 'appointments.cancel',
   'appointments.complete', 'appointments.checkin',
   'services.view', 'employees.view', 'attendance.view', 'attendance.self',
@@ -110,7 +112,7 @@ INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN (
   'dashboard.view',
   'customers.view', 'services.view', 'employees.view', 'attendance.view',
-  'pos.create', 'pos.refund', 'sales.view',
+  'pos.create', 'pos.refund', 'sales.view', 'sales.import',
   'expenses.view', 'expenses.manage', 'payroll.manage',
   'inventory.view', 'suppliers.view', 'purchases.view',
   'reports.view', 'reports.financial', 'reports.export', 'insights.view'
@@ -186,7 +188,7 @@ INSERT IGNORE INTO settings (setting_key, group_name, setting_value) VALUES
   ('financial.currency_code',      'financial', JSON_QUOTE('TZS')),
   ('financial.currency_decimals',  'financial', CAST('0' AS JSON)),
   ('financial.currency_locale',    'financial', JSON_QUOTE('en-TZ')),
-  ('financial.tax_mode',           'financial', JSON_QUOTE('exclusive')),
+  ('financial.tax_mode',           'financial', JSON_QUOTE('none')),
   ('financial.tax_rate',           'financial', CAST('18' AS JSON)),
   ('financial.tax_label',          'financial', JSON_QUOTE('VAT')),
   ('financial.invoice_prefix',     'financial', JSON_QUOTE('INV-')),
@@ -207,8 +209,8 @@ INSERT IGNORE INTO settings (setting_key, group_name, setting_value) VALUES
   -- Notifications
   ('notifications.reminders_enabled',     'notifications', CAST('true' AS JSON)),
   ('notifications.reminder_hours_before', 'notifications', CAST('24' AS JSON)),
-  ('notifications.channels',       'notifications', CAST('{"appointment_confirmation":["sms"],"appointment_reminder":["sms"],"appointment_cancelled":["sms"],"payment_receipt":[]}' AS JSON)),
-  ('notifications.templates',      'notifications', CAST('{"appointment_confirmation":"Hello {{customer_name}}, your appointment at {{salon_name}} is booked for {{date}} at {{time}} with {{stylist}}. Ref: {{code}}.","appointment_reminder":"Reminder: {{customer_name}}, we look forward to seeing you at {{salon_name}} on {{date}} at {{time}}. Ref: {{code}}.","appointment_cancelled":"Hello {{customer_name}}, your appointment {{code}} on {{date}} at {{time}} has been cancelled. Call us to rebook.","payment_receipt":"Thank you {{customer_name}}! We received {{amount}} for invoice {{invoice_number}} at {{salon_name}}."}' AS JSON)),
+  ('notifications.channels',       'notifications', CAST('{"appointment_confirmation":["whatsapp"],"appointment_reminder":["whatsapp"],"appointment_cancelled":["whatsapp"],"payment_receipt":["whatsapp"]}' AS JSON)),
+  ('notifications.templates',      'notifications', CAST('{"appointment_confirmation":"Hello {{customer_name}}, your appointment at {{salon_name}} is booked for {{date}} at {{time}} with {{stylist}} ({{services}}). Please reply YES to confirm. If you will be late, reply LATE and the minutes, e.g. LATE 15. Ref: {{code}}.","appointment_reminder":"Hello {{customer_name}}, a reminder of your appointment at {{salon_name}} on {{date}} at {{time}} with {{stylist}}. Please reply YES to confirm, or LATE and the minutes if you will be delayed, e.g. LATE 15. Ref: {{code}}.","appointment_cancelled":"Hello {{customer_name}}, your appointment {{code}} on {{date}} at {{time}} has been cancelled. Call us to rebook.","payment_receipt":"Thank you for choosing {{salon_name}}, {{customer_name}}! We have received your payment of {{amount}} for invoice {{invoice_number}}. It was a pleasure serving you, and we look forward to welcoming you again soon.","reply_confirmed":"Thank you, {{customer_name}}! Your appointment on {{date}} at {{time}} is confirmed. See you soon at {{salon_name}}.","reply_late":"Thank you for letting us know, {{customer_name}}. We have told {{stylist}} that you will be {{delay}}. See you soon!","reply_received":"Thank you, {{customer_name}}. We have received your message about your appointment on {{date}} at {{time}}, and our team will contact you shortly."}' AS JSON)),
   -- Integrations (secrets are stored encrypted with is_secret = 1 when set from the UI)
   ('integrations.email_provider',  'integrations', JSON_QUOTE('log')),
   ('integrations.email_from_name', 'integrations', JSON_QUOTE('Zola Stylish')),
@@ -224,6 +226,8 @@ INSERT IGNORE INTO settings (setting_key, group_name, setting_value) VALUES
   ('integrations.twilio_from',     'integrations', JSON_QUOTE('')),
   ('integrations.whatsapp_provider', 'integrations', JSON_QUOTE('log')),
   ('integrations.whatsapp_phone_number_id', 'integrations', JSON_QUOTE('')),
+  ('integrations.whatsapp_verify_token', 'integrations', JSON_QUOTE('')),
+  ('integrations.public_url',      'integrations', JSON_QUOTE('')),
   ('integrations.ai_provider',     'integrations', JSON_QUOTE('rule_based')),
   ('integrations.ai_model',        'integrations', JSON_QUOTE('')),
   -- Loyalty

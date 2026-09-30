@@ -12,6 +12,7 @@ import { formatDateTime, formatDuration, formatMoney, formatTime, formatDate, ti
 import { usePermission } from '../../hooks';
 import { appointmentApi, appointmentKeys, useAppointment, useAppointmentQr } from './api';
 import { EDITABLE_STATUSES, localDateOf } from './calendarUtils';
+import { ReplyBadge, ReplyNote } from './CustomerReply';
 
 /** Printable appointment slip (A4 or thermal). */
 function AppointmentSlip({ appointment, qr }) {
@@ -96,11 +97,14 @@ export function AppointmentDrawer({ appointmentId, onClose, onEdit }) {
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={a.status} />
             {a.checkedInAt ? <Badge tone="success"><CheckCheck className="size-3" />Checked in {formatTime(a.checkedInAt)}</Badge> : null}
+            <ReplyBadge appointment={a} />
             <Badge>{titleCase(a.source)}</Badge>
           </div>
           <p className="mt-3 font-display text-2xl font-semibold">{formatDate(a.startTime, 'cccc, dd LLL yyyy')}</p>
           <p className="text-muted">{formatTime(a.startTime)} – {formatTime(a.endTime)} · {formatDuration(a.totalDuration)}</p>
         </div>
+
+        <ReplyNote appointment={a} />
 
         <div className="rounded-2xl border border-line p-4">
           <div className="flex items-center gap-3">

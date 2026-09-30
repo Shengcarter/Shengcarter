@@ -38,7 +38,7 @@ Main threats considered: a staff member using more rights than their role allows
 - "Remember me" sessions last `REFRESH_TOKEN_DAYS` (30); others `SESSION_HOURS` (12).
 
 ### Authorization
-- 44 permissions in 13 modules, grouped into editable roles. Every API route declares the permissions it needs (`requirePermission`); the web app hiding a button is a convenience, not the protection.
+- 46 permissions in 13 modules, grouped into editable roles. Every API route declares the permissions it needs (`requirePermission`); the web app hiding a button is a convenience, not the protection.
 - Record-level rules in the services: stylists see only their own appointments (and, on their dashboard, their own services and commission); users work only in their own branch unless they have `branches.manage` — sales, appointments, expenses and stock of another branch answer *not found*. The customer list is shared by all branches, so a customer can visit any of them.
 - Guard rails: the last active Super Admin cannot be deactivated or demoted; users cannot deactivate themselves; the Super Admin role keeps all permissions.
 - Financial reports (`reports.financial`), exports (`reports.export`), refunds (`pos.refund`), backups (`backups.manage`), settings and user management are separate permissions.
@@ -55,7 +55,13 @@ Main threats considered: a staff member using more rights than their role allows
 
 ### File uploads
 - Only JPG, PNG, WebP and PDF (receipts) are accepted, up to `MAX_UPLOAD_MB`. The extension, the declared type **and the file's first bytes** must all match, so a script renamed to `.png` is rejected. SVG is not accepted (it can contain scripts).
+- Spreadsheet imports (`.xlsx` / `.csv`) are read in memory and never saved to disk; an `.xlsx` must start like a ZIP package and a CSV must be plain text, with at most 5,000 rows. Rows are validated like forms, and nothing is saved until every row passes (or problem rows are explicitly skipped).
 - Files get random, unguessable names; the original name is never used as a path. Uploads are served with `nosniff`, and hidden files are refused.
+
+### WhatsApp webhook
+- `/api/webhooks/whatsapp` is the only unauthenticated endpoint that changes data. Every request must be signed by the provider: Meta with HMAC-SHA256 of the exact body using the app secret, Twilio with HMAC-SHA1 of the URL and fields using the auth token. Signatures are compared in constant time; without a saved secret all requests are refused.
+- A reply can only confirm an appointment, record a delay, note a request to cancel (staff decide) or stop messages for that number. It never cancels, moves or bills anything. Messages resent by WhatsApp are recognised by their message ID and handled once.
+- Webhooks have their own rate limit (600 per minute) so delivery reports for large promotions are not throttled by the general API limit.
 
 ### Exports
 - CSV cells that start with `=`, `+`, `-` or `@` are neutralised so spreadsheets do not run them as formulas.

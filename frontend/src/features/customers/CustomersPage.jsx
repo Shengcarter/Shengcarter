@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Users } from 'lucide-react';
+import { FileUp, Plus, Users } from 'lucide-react';
 import { Avatar, Button, Card, DataTable, EmptyState, PageHeader, Pagination, SearchInput } from '../../components/ui';
 import { formatDate, formatMoney, formatNumber } from '../../utils/format';
 import { usePermission, useDocumentTitle } from '../../hooks';
 import { useCustomers } from './api';
 import { CustomerFormModal } from './CustomerFormModal';
+import { ImportDialog } from '../../components/ImportDialog';
 
 const FILTERS = [
   { value: '', label: 'All customers' },
@@ -19,6 +20,7 @@ export default function CustomersPage() {
   const navigate = useNavigate();
   const [params, setParams] = useState({ page: 1, limit: 20, search: '', sortBy: 'createdAt', sortOrder: 'desc', visited: '', gender: '' });
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const customers = useCustomers(params);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -72,7 +74,26 @@ export default function CustomersPage() {
       <PageHeader
         title="Customers"
         description={customers.data ? `${formatNumber(customers.data.pagination.total)} customer${customers.data.pagination.total === 1 ? '' : 's'}` : 'Your client base'}
-        actions={can('customers.create') ? <Button icon={Plus} onClick={() => setCreating(true)}>New customer</Button> : null}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {can('customers.import') ? <Button variant="secondary" icon={FileUp} onClick={() => setImporting(true)}>Import</Button> : null}
+            {can('customers.create') ? <Button icon={Plus} onClick={() => setCreating(true)}>New customer</Button> : null}
+          </div>
+        }
+      />
+      <ImportDialog
+        open={importing}
+        onClose={() => setImporting(false)}
+        type="customers"
+        title="Import customers"
+        noun={['customer', 'customers']}
+        intro={<p>Add many customers at once from an Excel sheet or CSV file. Each row is checked like the “New customer” form; phone numbers that are already registered are skipped, so nobody is added twice.</p>}
+        columns={[
+          { key: 'fullName', header: 'Name' },
+          { key: 'phone', header: 'Phone' },
+          { key: 'email', header: 'Email' },
+        ]}
+        invalidate={[['customers']]}
       />
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center">

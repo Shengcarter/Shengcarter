@@ -88,6 +88,7 @@ export default function SaleDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-display text-3xl font-semibold">{s.invoiceNumber}</h1>
             <StatusBadge status={s.status === 'refunded' ? 'refunded' : s.paymentStatus} />
+            {s.isImported ? <Badge tone="info">Imported</Badge> : null}
           </div>
           <p className="mt-1 text-sm text-muted">Receipt {s.receiptNumber} · {formatDateTime(s.soldAt)} · {s.branchName}</p>
         </div>

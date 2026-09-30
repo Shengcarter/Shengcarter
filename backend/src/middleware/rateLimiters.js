@@ -6,13 +6,13 @@ const config = require('../config');
 const message = (text) => ({ success: false, message: text, errors: [], code: 'RATE_LIMITED' });
 const skip = () => config.isTest;
 
-/** General API limit per IP address. */
+/** General API limit per IP address (WhatsApp webhooks have their own). */
 const apiLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
   limit: 1500,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
-  skip,
+  skip: (req) => skip() || req.path.startsWith('/webhooks/'),
   message: message('Too many requests. Please slow down and try again shortly.'),
 });
 

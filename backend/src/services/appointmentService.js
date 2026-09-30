@@ -200,13 +200,21 @@ async function create(data, ctx) {
       action: 'appointment.created', entityType: 'appointment', entityId: id,
       description: `Booked ${code} for ${customer.full_name} with ${employee.full_name} on ${fmtDate(start)} at ${fmtTime(start)}`,
     }, conn);
-    await messaging.notifyCustomer(
+    // Walk-ins are already here, so they get no "please confirm" message and
+    // no reminder. When the booking is already inside the reminder window, the
+    // confirmation asks the same question, so no reminder follows minutes later.
+    const walkIn = (data.source || 'phone') === 'walk_in';
+    const queued = walkIn ? [] : await messaging.notifyCustomer(
       'appointment_confirmation',
       customer,
       messageVariables({ start, code }, customer, employee.full_name, services),
       { branchId: ctx.branchId, relatedType: 'appointment', relatedId: id, createdBy: ctx.userId },
       conn,
     );
+    const reminderHours = Number(settings.get('notifications.reminder_hours_before') || 24);
+    if (walkIn || (queued.length && start.getTime() - Date.now() <= reminderHours * 3_600_000)) {
+      await db.query('UPDATE appointments SET reminder_sent_at = UTC_TIMESTAMP() WHERE id = ?', [id], conn);
+    }
     return { id, code, employee, customer, start };
   });
 
@@ -243,10 +251,13 @@ async function update(id, data, ctx) {
     await assertSlotAvailable(conn, { employee, customerId, start, end, excludeId: id, checkPast: timeChanged });
     await db.query(
       `UPDATE appointments SET customer_id = ?, employee_id = ?, start_time = ?, end_time = ?, notes = ?, source = ?,
-              total_price = ?, total_duration = ?, reminder_sent_at = IF(?, NULL, reminder_sent_at)
+              total_price = ?, total_duration = ?, reminder_sent_at = IF(?, NULL, reminder_sent_at),
+              customer_response = IF(?, NULL, customer_response), customer_response_at = IF(?, NULL, customer_response_at),
+              customer_delay_minutes = IF(?, NULL, customer_delay_minutes), customer_response_note = IF(?, NULL, customer_response_note)
        WHERE id = ?`,
+      // A new time needs a new reminder, and the customer's earlier reply no longer applies.
       [customerId, employee.id, start, end, data.notes !== undefined ? data.notes : existing.notes, data.source || existing.source,
-        totalPrice, totalDuration, timeChanged ? 1 : 0, id],
+        totalPrice, totalDuration, ...Array(5).fill(timeChanged ? 1 : 0), id],
       conn,
     );
     await model.replaceServices(conn, id, services);
@@ -527,6 +538,8 @@ async function sendDueReminders() {
 }
 
 module.exports = {
+  fmtDate,
+  fmtTime,
   TRANSITIONS,
   getById,
   calendar,

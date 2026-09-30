@@ -102,4 +102,39 @@ function removeUploadedFile(publicPath) {
   fs.unlink(resolved, () => {});
 }
 
-module.exports = { singleUpload, removeUploadedFile };
+const XLSX_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]); // .xlsx is a ZIP package
+
+/**
+ * One .xlsx or .csv file for the import screens, kept in memory only (never
+ * written to disk). Browsers report spreadsheet MIME types inconsistently
+ * (Windows sends CSV as application/vnd.ms-excel), so the extension and the
+ * content are checked instead: an .xlsx must start like a ZIP package and a
+ * CSV must be text.
+ */
+function spreadsheetUpload(field = 'file') {
+  const uploader = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: config.uploads.maxBytes, files: 1, fields: 10 },
+    fileFilter: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      if (ext !== '.xlsx' && ext !== '.csv') {
+        return cb(ApiError.validation([{ field, message: 'Choose an Excel workbook (.xlsx) or a CSV file (.csv). Older .xls files: open them in Excel and save as .xlsx.' }]));
+      }
+      return cb(null, true);
+    },
+  }).single(field);
+
+  return (req, res, next) => {
+    uploader(req, res, (err) => {
+      if (err) return next(err);
+      if (!req.file) return next();
+      const ext = path.extname(req.file.originalname).toLowerCase();
+      const bytes = req.file.buffer;
+      const valid = ext === '.xlsx' ? bytes.subarray(0, 4).equals(XLSX_MAGIC) : !bytes.includes(0);
+      if (!valid) return next(ApiError.validation([{ field, message: `This file is not a valid ${ext === '.xlsx' ? 'Excel workbook' : 'CSV text file'}.` }]));
+      return next();
+    });
+  };
+}
+
+module.exports = { singleUpload, spreadsheetUpload, removeUploadedFile };

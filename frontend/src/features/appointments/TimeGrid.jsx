@@ -4,6 +4,7 @@ import { CheckCircle2, GripVertical } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatTime, nowInBusinessZone } from '../../utils/format';
 import { PX_PER_MIN, STATUS_STYLES, layoutDay, minutesOfDay } from './calendarUtils';
+import { ReplyIcon } from './CustomerReply';
 
 // Narrowest readable appointment card, and the room kept for "+N" chips.
 const MIN_LANE_PX = 76;
@@ -28,7 +29,7 @@ function EventCard({ event, compact, dragging }) {
     >
       <p className="flex items-center gap-1 font-semibold text-fg">
         <span className="truncate">{formatTime(event.startTime)} · {event.customerName}</span>
-        {event.checkedInAt && event.status !== 'completed' ? <CheckCircle2 className="size-3 shrink-0 text-success" aria-label="Checked in" /> : null}
+        {event.checkedInAt && event.status !== 'completed' ? <CheckCircle2 className="size-3 shrink-0 text-success" aria-label="Checked in" /> : <ReplyIcon appointment={event} />}
       </p>
       {!compact ? <p className="truncate text-muted">{event.services}</p> : null}
       {!compact ? <p className="truncate text-muted">{event.employeeName}</p> : null}

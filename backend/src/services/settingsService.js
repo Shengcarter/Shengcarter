@@ -24,6 +24,11 @@ const text = (max) => z.string().trim().max(max);
 const optionalEmail = z.union([z.literal(''), z.email().max(150)]);
 const channelList = z.array(z.enum(['sms', 'whatsapp', 'email'])).max(3);
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24-hour) format');
+const WHATSAPP_TEMPLATE_EVENTS = ['appointment_confirmation', 'appointment_reminder', 'appointment_cancelled', 'payment_receipt'];
+const whatsappTemplate = z.object({
+  name: z.string().trim().max(100).regex(/^[A-Za-z0-9_]*$/, 'Use the template name exactly as approved (letters, numbers and underscores)'),
+  language: z.string().trim().max(15).regex(/^([a-z]{2,3}(_[A-Za-z]{2,4})?)?$/, 'Language code such as en, en_US or sw'),
+});
 const dayHours = z
   .object({ open: z.boolean(), start: hhmm, end: hhmm })
   .refine((d) => !d.open || d.start < d.end, 'Closing time must be after opening time');
@@ -86,6 +91,10 @@ const SETTINGS = {
       appointment_reminder: text(600).min(1),
       appointment_cancelled: text(600).min(1),
       payment_receipt: text(600).min(1),
+      // Automatic answers when a customer replies on WhatsApp.
+      reply_confirmed: text(600).min(1),
+      reply_late: text(600).min(1),
+      reply_received: text(600).min(1),
     }),
   },
 
@@ -108,6 +117,16 @@ const SETTINGS = {
   'integrations.whatsapp_provider': { schema: z.enum(['log', 'meta_cloud', 'twilio']) },
   'integrations.whatsapp_phone_number_id': { schema: text(60) },
   'integrations.whatsapp_access_token': { schema: text(600), secret: true, env: () => config.integrations.whatsapp.apiKey },
+  // Meta: the app secret signs incoming webhooks; the verify token is the word
+  // typed in both Meta and here when connecting the webhook.
+  'integrations.whatsapp_app_secret': { schema: text(200), secret: true, env: () => config.integrations.whatsapp.appSecret },
+  'integrations.whatsapp_verify_token': { schema: z.string().trim().max(100).regex(/^[A-Za-z0-9_\-.]*$/, 'Letters, numbers, dots, dashes and underscores only') },
+  // Approved WhatsApp templates (Meta template name or Twilio Content SID) per message.
+  'integrations.whatsapp_templates': {
+    schema: z.object(Object.fromEntries(WHATSAPP_TEMPLATE_EVENTS.map((event) => [event, whatsappTemplate]))).partial(),
+  },
+  // Internet address of this system, e.g. https://salon.example.com (for WhatsApp replies).
+  'integrations.public_url': { schema: z.union([z.literal(''), z.url({ protocol: /^https?$/ }).max(200).transform((v) => v.replace(/\/+$/, ''))]) },
   'integrations.ai_provider': { schema: z.enum(['rule_based', 'anthropic', 'openai']) },
   'integrations.ai_model': { schema: text(100) },
   'integrations.ai_api_key': { schema: text(300), secret: true, env: () => config.integrations.ai.apiKey },
@@ -134,7 +153,7 @@ const DEFAULTS = {
   'financial.currency_code': 'TZS',
   'financial.currency_decimals': 0,
   'financial.currency_locale': 'en-TZ',
-  'financial.tax_mode': 'exclusive',
+  'financial.tax_mode': 'none',
   'financial.tax_rate': 18,
   'financial.tax_label': 'VAT',
   'financial.invoice_prefix': 'INV-',
@@ -154,6 +173,7 @@ const DEFAULTS = {
   'integrations.email_provider': 'log',
   'integrations.sms_provider': 'log',
   'integrations.whatsapp_provider': 'log',
+  'integrations.whatsapp_templates': {},
   'integrations.ai_provider': 'rule_based',
   'loyalty.enabled': true,
   'loyalty.earn_amount_unit': 1000,
@@ -320,6 +340,7 @@ async function setInternal(key, value, ctx) {
 
 module.exports = {
   SETTINGS,
+  WHATSAPP_TEMPLATE_EVENTS,
   GROUPS,
   load,
   ensureFresh,
