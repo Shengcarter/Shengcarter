@@ -37,7 +37,21 @@ async function resolveBranchId(req, user) {
   return fallback ? fallback.id : null;
 }
 
-/** Verify the JWT access token and load the current user. */
+/**
+ * Is the session the access token belongs to still open? Signing out, a
+ * password change, deactivation or detected token theft ends a session, and
+ * its access tokens stop working at once (see authService).
+ */
+async function sessionIsOpen(sessionId, userId) {
+  if (!sessionId) return false;
+  const row = await db.queryOne(
+    'SELECT id FROM refresh_tokens WHERE family_id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > UTC_TIMESTAMP() LIMIT 1',
+    [sessionId, userId],
+  );
+  return Boolean(row);
+}
+
+/** Verify the JWT access token, check its session is still open and load the current user. */
 async function authenticate(req, _res, next) {
   const token = readBearerToken(req);
   if (!token) throw ApiError.unauthorized('Authentication required', { code: 'NO_TOKEN' });
@@ -52,6 +66,9 @@ async function authenticate(req, _res, next) {
     throw ApiError.unauthorized('Invalid authentication token', { code: 'INVALID_TOKEN' });
   }
   if (payload.type !== 'access') throw ApiError.unauthorized('Invalid authentication token', { code: 'INVALID_TOKEN' });
+  if (!(await sessionIsOpen(payload.sid, payload.sub))) {
+    throw ApiError.unauthorized('Your session has ended. Please sign in again.', { code: 'SESSION_ENDED' });
+  }
 
   // Loaded on every request so deactivated accounts and role changes apply immediately.
   const row = await db.queryOne(
@@ -90,6 +107,7 @@ async function authenticate(req, _res, next) {
   req.ctx = {
     userId: user.id,
     user,
+    sessionId: payload.sid,
     branchId: await resolveBranchId(req, user),
     ip: req.ip,
     userAgent: req.headers['user-agent'] || null,

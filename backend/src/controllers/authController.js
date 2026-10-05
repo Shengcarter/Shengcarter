@@ -4,22 +4,28 @@ const config = require('../config');
 const authService = require('../services/authService');
 const { sendSuccess } = require('../utils/response');
 
+// The refresh token is only ever sent to /api/auth, never readable by scripts
+// (HttpOnly), only over HTTPS when COOKIE_SECURE is on, and never on requests
+// started by another site (SameSite=Strict).
 const COOKIE_PATH = '/api/auth';
+const COOKIE_OPTIONS = () => ({ httpOnly: true, secure: config.auth.cookieSecure, sameSite: 'strict', path: COOKIE_PATH });
 
 function setRefreshCookie(res, refresh) {
   if (!refresh) return;
   res.cookie(config.auth.refreshCookieName, refresh.token, {
-    httpOnly: true,
-    secure: config.auth.cookieSecure,
-    sameSite: 'lax',
-    path: COOKIE_PATH,
+    ...COOKIE_OPTIONS(),
     // Without "remember me" the cookie ends with the browser session.
     ...(refresh.remember ? { expires: refresh.expiresAt } : {}),
   });
 }
 
 function clearRefreshCookie(res) {
-  res.clearCookie(config.auth.refreshCookieName, { httpOnly: true, secure: config.auth.cookieSecure, sameSite: 'lax', path: COOKIE_PATH });
+  res.clearCookie(config.auth.refreshCookieName, COOKIE_OPTIONS());
+}
+
+function bearer(req) {
+  const [scheme, token] = (req.headers.authorization || '').split(' ');
+  return scheme === 'Bearer' && token ? token : null;
 }
 
 const meta = (req) => ({
@@ -29,7 +35,7 @@ const meta = (req) => ({
 });
 
 async function login(req, res) {
-  const result = await authService.login(req.body, meta(req));
+  const result = await authService.login(req.body, meta(req), req.cookies?.[config.auth.refreshCookieName]);
   setRefreshCookie(res, result.refresh);
   sendSuccess(res, { accessToken: result.accessToken, ...result.session }, 'Signed in successfully');
 }
@@ -46,7 +52,7 @@ async function refresh(req, res) {
 }
 
 async function logout(req, res) {
-  await authService.logout(req.cookies?.[config.auth.refreshCookieName], req.ctx || { ip: req.ip, userAgent: req.headers['user-agent'] });
+  await authService.logout(req.cookies?.[config.auth.refreshCookieName], req.ctx || { ip: req.ip, userAgent: req.headers['user-agent'] }, bearer(req));
   clearRefreshCookie(res);
   sendSuccess(res, null, 'Signed out successfully');
 }

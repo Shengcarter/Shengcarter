@@ -92,10 +92,11 @@ ALTER TABLE inventory_transactions
 
 -- ---------------------------------------------------------------------------
 -- 4. Login sessions end at a fixed time after sign-in, however often they are
---    refreshed (12 hours, or 30 days with "remember me", from .env).
+--    refreshed (SESSION_MAX_HOURS, or REFRESH_TOKEN_DAYS with "remember me").
 -- ---------------------------------------------------------------------------
 ALTER TABLE refresh_tokens
-  ADD COLUMN session_started_at DATETIME NULL COMMENT 'Sign-in time of the session (family)' AFTER remember;
+  ADD COLUMN session_started_at DATETIME NULL COMMENT 'Sign-in time of the session (family)' AFTER remember,
+  MODIFY revoked_reason ENUM('rotated','logout','reuse','password','admin','expired') NULL;
 UPDATE refresh_tokens SET session_started_at = created_at WHERE session_started_at IS NULL;
 
 -- ---------------------------------------------------------------------------

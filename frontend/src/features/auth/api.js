@@ -1,5 +1,7 @@
 import { http, refreshSession } from '../../api/client';
+import { queryClient } from '../../api/queryClient';
 import { useAuthStore } from '../../store/authStore';
+import { announceSignOut, goToSignIn } from './sessionSync';
 
 export async function login(values) {
   const res = await http.post('/auth/login', values);
@@ -7,11 +9,22 @@ export async function login(values) {
   return res.data;
 }
 
+/**
+ * Sign out: the server ends the session (both tokens stop working), this tab
+ * forgets everything it loaded, other tabs follow, and the page is left with
+ * a hard navigation that replaces the history entry — so Back cannot show a
+ * signed-in screen again.
+ */
 export async function logout() {
   try {
     await http.post('/auth/logout');
+  } catch {
+    /* offline: the session still ends here, and on the server when it expires */
   } finally {
     useAuthStore.getState().clearSession();
+    queryClient.clear();
+    announceSignOut();
+    goToSignIn();
   }
 }
 

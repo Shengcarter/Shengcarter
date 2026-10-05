@@ -32,10 +32,7 @@ export default function ChangePasswordPage() {
         </div>
         <button
           type="button"
-          onClick={async () => {
-            await logout();
-            navigate('/login', { replace: true });
-          }}
+          onClick={() => logout()}
           className="mt-6 w-full text-center text-sm text-muted hover:text-fg"
         >
           Sign out
