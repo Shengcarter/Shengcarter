@@ -152,6 +152,24 @@ const DOCUMENTS = {
           col('marginStatus', 'Margin', 'title'), col('reviewStatus', 'Review', 'title'), col('performedAt', 'Date', 'datetime')],
         rows: r.flagged,
       },
+      {
+        title: 'By how sales were entered',
+        columns: [col('label', 'Entered'), col('sales', 'Sales', 'number'), col('services', 'Services', 'number'), col('revenue', 'Revenue', 'money'), col('productCost', 'Products deducted', 'money'),
+          col('consumptionCost', 'Products used (cost)', 'money'), col('operations', 'Operations', 'money'), col('staffEarnings', 'Staff', 'money'), col('salonProfit', 'Salon profit', 'money')],
+        rows: (r.bySource || []).map((x) => ({ ...x, label: { pos: 'At the till', backdated: 'Recorded later', import: 'Imported' }[x.source] })),
+      },
+      {
+        title: 'By calculation',
+        columns: [col('label', 'Calculation'), col('services', 'Services', 'number'), col('revenue', 'Revenue', 'money'), col('operations', 'Operations', 'money'),
+          col('staffEarnings', 'Staff', 'money'), col('salonProfit', 'Salon profit', 'money')],
+        rows: (r.byMethod || []).map((x) => ({ ...x, label: { general: 'General formula', band: 'Service rule (fixed amounts)', band_general: 'Service rule (general formula band)' }[x.method] || x.method })),
+      },
+      {
+        title: 'Recorded later, moved or voided',
+        columns: [col('invoiceNumber', 'Invoice'), col('status', 'Status', 'title'), col('soldAt', 'Business date', 'datetime'), col('createdAt', 'Entered', 'datetime'),
+          col('enteredBy', 'Entered by'), col('total', 'Total', 'money'), col('reason', 'Reason')],
+        rows: (r.corrections || []).map((x) => ({ ...x, reason: x.voidReason || x.backdateReason || (x.moved ? 'Date changed' : '') })),
+      },
     ],
   }),
   inventory: (r) => ({

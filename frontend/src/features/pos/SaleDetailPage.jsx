@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, Banknote, Download, FileText, Printer, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Ban, Banknote, CalendarClock, Download, FileText, Printer, RotateCcw } from 'lucide-react';
 import { Badge, Button, Card, Detail, ErrorState, Input, Modal, Select, SkeletonRows, StatusBadge, Textarea } from '../../components/ui';
 import { usePrint } from '../../components/print/usePrint';
 import { downloadFile } from '../../api/client';
-import { formatDateTime, formatMoney, titleCase } from '../../utils/format';
+import { formatDate, formatDateTime, formatMoney, titleCase } from '../../utils/format';
 import { usePermission, useDocumentTitle } from '../../hooks';
 import { ServiceCostingCard } from '../costing/ServiceCostingCard';
 import { A4Invoice, ThermalReceipt } from './Documents';
@@ -68,6 +68,67 @@ function RefundForm({ sale, open, onClose }) {
   );
 }
 
+/** Void a sale recorded by mistake: everything it did is undone; the record stays, marked voided. */
+function VoidForm({ sale, open, onClose }) {
+  const qc = useQueryClient();
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await salesApi.voidSale(sale.id, reason);
+      toast.success(`${sale.invoiceNumber} voided`);
+      qc.invalidateQueries({ queryKey: salesKeys.all });
+      qc.invalidateQueries({ queryKey: ['products'] });
+      onClose();
+    } catch (e) {
+      toast.error(e.errors?.[0]?.message || e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal open={open} onClose={onClose} size="sm" title={`Void ${sale.invoiceNumber}?`}
+      description="For a sale recorded by mistake. Everything it did is undone: payments cancelled on the day they were received, products sold and products used put back in stock, staff commission and loyalty points reversed. The sale stays in the history, marked voided, with your name and reason."
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="danger" onClick={submit} loading={busy} disabled={reason.trim().length < 3}>Void sale</Button></>}>
+      <Textarea label="Reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Entered twice" data-autofocus />
+    </Modal>
+  );
+}
+
+/** Move a sale to its correct business date; its payments, commission and breakdown move with it. */
+function DateForm({ sale, open, onClose }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ soldDate: '', soldTime: '', reason: '' });
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await salesApi.changeDate(sale.id, { soldDate: form.soldDate, soldTime: form.soldTime || undefined, reason: form.reason });
+      toast.success(`${sale.invoiceNumber} moved to ${formatDate(form.soldDate)}`);
+      qc.invalidateQueries({ queryKey: salesKeys.all });
+      onClose();
+    } catch (e) {
+      toast.error(e.errors?.[0]?.message || e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal open={open} onClose={onClose} size="sm" title={`Change the date of ${sale.invoiceNumber}`}
+      description={`Now ${formatDateTime(sale.soldAt)}. The payments taken with it, staff commission and its service breakdown move to the new date; when it was entered is kept.`}
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={submit} loading={busy} disabled={!form.soldDate || form.reason.trim().length < 3}>Change date</Button></>}>
+      <div className="space-y-4">
+        <div className="grid grid-cols-[1fr_8rem] gap-3">
+          <Input label="Correct date" type="date" value={form.soldDate} onChange={(e) => setForm({ ...form, soldDate: e.target.value })} />
+          <Input label="Time" type="time" value={form.soldTime} onChange={(e) => setForm({ ...form, soldTime: e.target.value })} hint="Optional" />
+        </div>
+        <Textarea label="Reason" rows={2} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="e.g. Entered on the wrong day" />
+      </div>
+    </Modal>
+  );
+}
+
 export default function SaleDetailPage() {
   const { id } = useParams();
   const can = usePermission();
@@ -76,6 +137,8 @@ export default function SaleDetailPage() {
   const { print, portal } = usePrint();
   const [paying, setPaying] = useState(false);
   const [refunding, setRefunding] = useState(false);
+  const [voiding, setVoiding] = useState(false);
+  const [redating, setRedating] = useState(false);
 
   if (sale.isPending) return <SkeletonRows rows={8} />;
   if (sale.isError) return <ErrorState error={sale.error} onRetry={sale.refetch} />;
@@ -88,17 +151,27 @@ export default function SaleDetailPage() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-display text-3xl font-semibold">{s.invoiceNumber}</h1>
-            <StatusBadge status={s.status === 'refunded' ? 'refunded' : s.paymentStatus} />
+            <StatusBadge status={s.status === 'completed' ? s.paymentStatus : s.status} />
             {s.isImported ? <Badge tone="info">Imported</Badge> : null}
+            {s.source === 'backdated' ? <Badge tone="warning"><CalendarClock className="size-3" />Recorded later</Badge> : null}
           </div>
           <p className="mt-1 text-sm text-muted">Receipt {s.receiptNumber} · {formatDateTime(s.soldAt)} · {s.branchName}</p>
+          {s.source !== 'pos' || s.updatedByName ? (
+            <p className="mt-0.5 text-xs text-muted">
+              Entered {formatDateTime(s.createdAt)} by {s.cashierName}
+              {s.originalSoldAt && new Date(s.originalSoldAt).getTime() !== new Date(s.soldAt).getTime() ? ` · first recorded for ${formatDateTime(s.originalSoldAt)}` : ''}
+              {s.updatedByName ? ` · last changed by ${s.updatedByName}` : ''}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" icon={Printer} onClick={() => print(<ThermalReceipt sale={s} />, { format: 'thermal' })}>Receipt</Button>
           <Button variant="secondary" size="sm" icon={FileText} onClick={() => print(<A4Invoice sale={s} />, { format: 'a4' })}>Invoice</Button>
           <Button variant="ghost" size="sm" icon={Download} onClick={() => downloadFile(`/sales/${s.id}/document`, { format: 'a4', download: true }, `invoice-${s.invoiceNumber}.pdf`)}>PDF</Button>
           {s.status === 'completed' && s.balanceDue > 0 && can('pos.create') ? <Button size="sm" icon={Banknote} onClick={() => setPaying(true)}>Record payment</Button> : null}
+          {s.status === 'completed' && can('sales.edit_history') ? <Button size="sm" variant="ghost" icon={CalendarClock} onClick={() => setRedating(true)}>Change date</Button> : null}
           {s.status === 'completed' && can('pos.refund') ? <Button size="sm" variant="danger-ghost" icon={RotateCcw} onClick={() => setRefunding(true)}>Refund</Button> : null}
+          {s.status === 'completed' && can('sales.void') ? <Button size="sm" variant="danger-ghost" icon={Ban} onClick={() => setVoiding(true)}>Void</Button> : null}
         </div>
       </div>
 
@@ -161,6 +234,8 @@ export default function SaleDetailPage() {
               {s.costOfGoods !== undefined ? <Detail label="Cost of goods">{formatMoney(s.costOfGoods)}</Detail> : null}
               {s.notes ? <Detail label="Notes" className="col-span-2">{s.notes}</Detail> : null}
               {s.status === 'refunded' ? <Detail label="Refund" className="col-span-2">{formatDateTime(s.refundedAt)} by {s.refundedByName}: {s.refundReason}</Detail> : null}
+              {s.status === 'voided' ? <Detail label="Voided" className="col-span-2">{formatDateTime(s.voidedAt)} by {s.voidedByName}: {s.voidReason}</Detail> : null}
+              {s.isBackdated ? <Detail label="Why recorded later" className="col-span-2">{s.backdateReason}</Detail> : null}
             </dl>
           </Card>
           <Card className="p-5">
@@ -169,10 +244,10 @@ export default function SaleDetailPage() {
               {s.payments.map((p) => (
                 <li key={p.id} className="flex items-center justify-between text-sm">
                   <span>
-                    <span className="font-medium">{titleCase(p.method)}</span> {p.type === 'refund' ? <Badge tone="danger">Refund</Badge> : null}
+                    <span className="font-medium">{titleCase(p.method)}</span> {p.type === 'refund' ? <Badge tone="danger">Refund</Badge> : p.type === 'void' ? <Badge tone="danger">Voided</Badge> : null}
                     <span className="block text-xs text-muted">{formatDateTime(p.paidAt)}{p.reference ? ` · ${p.reference}` : ''}</span>
                   </span>
-                  <span className={p.amount < 0 ? 'text-danger' : 'font-medium'}>{formatMoney(p.amount)}</span>
+                  <span className={p.amount < 0 ? 'shrink-0 whitespace-nowrap text-danger' : 'shrink-0 whitespace-nowrap font-medium'}>{formatMoney(p.amount)}</span>
                 </li>
               ))}
               {!s.payments.length ? <li className="text-sm text-muted">No payments yet.</li> : null}
@@ -183,6 +258,8 @@ export default function SaleDetailPage() {
       <div className="mt-6"><ServiceCostingCard sale={s} /></div>
       {can('pos.create') && s.balanceDue > 0 ? <PaymentForm key={`pay-${s.balanceDue}`} sale={s} open={paying} onClose={() => setPaying(false)} /> : null}
       <RefundForm sale={s} open={refunding} onClose={() => setRefunding(false)} />
+      <VoidForm sale={s} open={voiding} onClose={() => setVoiding(false)} />
+      <DateForm sale={s} open={redating} onClose={() => setRedating(false)} />
       {portal}
     </div>
   );

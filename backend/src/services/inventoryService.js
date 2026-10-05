@@ -159,8 +159,9 @@ async function getProductDetail(id, ctx) {
  */
 async function usableProducts(ctx) {
   const rows = await db.query(
-    `SELECT id, name, sku, unit, usage_unit, usage_per_unit, purchase_price, quantity, is_retail FROM products
-     WHERE branch_id = ? AND status = 'active' ORDER BY is_retail, name`,
+    `SELECT p.id, p.name, p.sku, p.barcode, p.unit, p.usage_unit, p.usage_per_unit, p.purchase_price, p.quantity, p.is_retail, c.name AS category
+     FROM products p LEFT JOIN product_categories c ON c.id = p.category_id
+     WHERE p.branch_id = ? AND p.status = 'active' ORDER BY p.is_retail, p.name`,
     [ctx.branchId],
   );
   const { canSeeCosts, usageOf } = require('./serviceFinanceService');
@@ -168,7 +169,7 @@ async function usableProducts(ctx) {
   return rows.map((p) => {
     const usage = usageOf(p);
     return {
-      id: p.id, name: p.name, sku: p.sku, unit: usage.unit, stockUnit: p.unit, perStockUnit: usage.per.toNumber(),
+      id: p.id, name: p.name, sku: p.sku, barcode: p.barcode || null, category: p.category || null, unit: usage.unit, stockUnit: p.unit, perStockUnit: usage.per.toNumber(),
       inStock: toNumber(D(p.quantity).times(usage.per), 3), isRetail: Boolean(p.is_retail),
       ...(showCosts ? { unitCost: toNumber(usage.unitCost, 4) } : {}),
     };

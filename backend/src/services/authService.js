@@ -66,16 +66,6 @@ async function createRefreshToken(userId, { remember, familyId = crypto.randomUU
   return { token, expiresAt, remember, familyId };
 }
 
-/** Is this session still open (signed in, not signed out or revoked, not expired)? */
-async function isSessionActive(sessionId, userId) {
-  if (!sessionId) return false;
-  const row = await db.queryOne(
-    'SELECT id FROM refresh_tokens WHERE family_id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > UTC_TIMESTAMP() LIMIT 1',
-    [sessionId, userId],
-  );
-  return Boolean(row);
-}
-
 /** End a whole session (every token of the family). */
 async function endSession(familyId, reason, conn) {
   await db.query('UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP(), revoked_reason = ? WHERE family_id = ? AND revoked_at IS NULL', [reason, familyId], conn);
@@ -356,7 +346,6 @@ async function resetPassword({ token, password }, meta) {
 module.exports = {
   hashPassword,
   issueAccessToken,
-  isSessionActive,
   buildSession,
   login,
   refresh,

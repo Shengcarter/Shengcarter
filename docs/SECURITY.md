@@ -30,18 +30,21 @@ Main threats considered: a staff member using more rights than their role allows
 - No password is hard-coded anywhere; the first administrator and demo accounts get their passwords from `.env`.
 
 ### Sessions
-- **Access token**: JWT signed with `JWT_SECRET` (HS256), valid 15 minutes, held only in the web app's memory — never in `localStorage`, so a script cannot collect it from storage.
-- **Refresh token**: random 384-bit value in an `httpOnly`, `SameSite=Lax` cookie limited to `/api/auth` (and `Secure` with `COOKIE_SECURE=true`); the database stores only its SHA-256 hash.
+- **Server-side sessions.** Signing in starts a session (a refresh-token family). Signing in again from the same browser ends the previous session and starts a new one with new tokens, so a planted token is never adopted (session fixation).
+- **Access token**: JWT signed with `JWT_SECRET` (HS256), valid 15 minutes, held only in the web app's memory — never in `localStorage`, so a script cannot collect it from storage. It names its session, and **every request checks that session is still open**: signing out, a password change, an administrator reset or deactivation, or detected token theft stops the access token immediately, not 15 minutes later.
+- **Refresh token**: random 384-bit value in an `HttpOnly`, `SameSite=Strict` cookie limited to `/api/auth` (and `Secure` with `COOKIE_SECURE=true`); the database stores only its SHA-256 hash.
 - **Rotation with theft detection**: every refresh issues a new token and retires the old one. If a retired token is presented again (outside a few seconds' grace for parallel browser tabs), the whole sign-in family is revoked — both the thief and the real user are signed out and must sign in again.
-- Changing a password, an administrator reset and deactivating a user end the user's other sessions.
-- The user and permissions are re-read from the database on **every** request, so deactivation, role and permission changes apply immediately, not when the token expires.
-- "Remember me" sessions last `REFRESH_TOKEN_DAYS` (30); others `SESSION_HOURS` (12).
+- **Expiry**: a session ends after `SESSION_HOURS` (12) without use and at the latest `SESSION_MAX_HOURS` (24) after sign-in, however often it is refreshed; with "remember me", `REFRESH_TOKEN_DAYS` (30) after sign-in. Without "remember me" the cookie also ends when the browser closes.
+- **Sign-out** ends the session on the server (both tokens), wipes everything the page loaded, signs out the other open tabs (BroadcastChannel) and leaves with a full page load that replaces the history entry. Pages are never stored (`Cache-Control: no-store` on the app page and every API response) and a page restored from the browser's back/forward cache reloads, so **Back after signing out shows the sign-in page, not the previous screen**; a tab coming back into view re-checks its session.
+- **CSRF**: every API call is authorised by the bearer token, which a browser never attaches on its own. The three endpoints that use the cookie (sign-in, refresh, sign-out) also refuse requests whose `Origin`/`Referer` is another site, on top of `SameSite=Strict`.
+- Changing a password ends the user's other sessions; an administrator reset and deactivation end all of them.
+- The user and permissions are re-read from the database on **every** request, so deactivation, role and permission changes apply immediately.
 
 ### Authorization
-- 48 permissions in 13 modules, grouped into editable roles. Every API route declares the permissions it needs (`requirePermission`); the web app hiding a button is a convenience, not the protection.
+- 52 permissions in 13 modules, grouped into editable roles. Every API route declares the permissions it needs (`requirePermission`); the web app hiding a button is a convenience, not the protection.
 - Record-level rules in the services: stylists see only their own appointments (and, on their dashboard, their own services and commission); users work only in their own branch unless they have `branches.manage` — sales, appointments, expenses and stock of another branch answer *not found*. The customer list is shared by all branches, so a customer can visit any of them.
 - Guard rails: the last active Super Admin cannot be deactivated or demoted; users cannot deactivate themselves; the Super Admin role keeps all permissions.
-- Financial reports (`reports.financial`), exports (`reports.export`), refunds (`pos.refund`), corrections to completed services (`sales.correct`), backups (`backups.manage`), settings (including the service money split) and user management are separate permissions. Stylists can record the products they used (`appointments.record_products`) but cannot change prices, product costs, recipes, the split or completed sales; cost figures are only returned to people with `reports.financial` or `sales.correct`.
+- Financial reports (`reports.financial`), exports (`reports.export`), refunds (`pos.refund`), corrections to completed services (`sales.correct`), sales for a previous date (`sales.backdate`), changing the date of past sales and correcting earlier days' sales (`sales.edit_history`), voiding sales (`sales.void`), service financial rules (`services.rules`), backups (`backups.manage`), settings (including the service money split) and user management are separate permissions. Stylists can record the products they used (`appointments.record_products`) but cannot change prices, product costs, recipes, the split or completed sales; cost figures are only returned to people with `reports.financial` or `sales.correct`.
 
 ### Input handling
 - Every request body, query and route parameter is validated with **Zod** schemas; unknown fields are dropped; lengths, formats, ranges and enumerations are enforced; invalid input gets a `422` with per-field messages.
@@ -85,7 +88,7 @@ Behind a proxy set `TRUST_PROXY` correctly so limits and logs use the real clien
 - In production, error responses never contain stack traces or SQL messages.
 
 ### Logging and audit
-- **Activity log** (*Settings → Activity log*, `audit.view`): sign-ins, failed sign-ins, lockouts, password changes and resets, user and role changes, sales, payments, refunds, stock adjustments, purchases, expenses, commission payouts, settings changes, exports, backups (created, downloaded, deleted) and restores — with user, branch, IP address and time. Business entries are written in the same transaction as the change.
+- **Activity log** (*Settings → Activity log*, `audit.view`): sign-ins, failed sign-ins, lockouts, password changes and resets, user and role changes, sales, sales recorded for a previous date, payments, refunds, voids, date changes, service corrections, financial rule changes, stock adjustments, purchases, expenses, commission payouts, settings changes, exports, backups (created, downloaded, deleted) and restores — with user, branch, IP address, device (browser) and time, and for changes the **previous and new values**. Business entries are written in the same transaction as the change.
 - **Application log**: request method, path, status and client address. Query strings are not logged (they may contain reset tokens or searched phone numbers); passwords, tokens, cookies and authorization headers are redacted. The log file is rotated by size (`LOG_MAX_MB`, `LOG_KEEP_FILES`).
 
 ### Privacy

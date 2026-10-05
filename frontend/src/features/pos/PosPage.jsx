@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowDown, CalendarCheck, ChevronDown, FileUp, Gift, History, Loader2, Minus, NotebookPen, Package, Plus, ShoppingBag, Trash2, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, CalendarCheck, CalendarClock, ChevronDown, FileUp, Gift, History, Loader2, Minus, NotebookPen, Package, Plus, ShoppingBag, Trash2, Users, X } from 'lucide-react';
 import { Badge, Button, ButtonLink, Card, Drawer, EmptyState, IconButton, Input, Segmented, Textarea } from '../../components/ui';
 import { http } from '../../api/client';
 import { cn } from '../../utils/cn';
-import { formatMoney } from '../../utils/format';
+import { formatDate, formatMoney } from '../../utils/format';
 import { useDebounce, useDocumentTitle, useMediaQuery, usePermission } from '../../hooks';
 import { useAuthStore } from '../../store/authStore';
 import { CustomerPicker } from '../customers/CustomerPicker';
@@ -19,7 +19,13 @@ import { PaymentModal } from './PaymentModal';
 import { ReceiptModal } from './ReceiptModal';
 import { salesApi } from './api';
 
-const EMPTY_CART = { customer: null, appointment: null, items: [], discount: { type: 'none', value: '' }, loyaltyPoints: '', notes: '' };
+const EMPTY_CART = { customer: null, appointment: null, items: [], discount: { type: 'none', value: '' }, loyaltyPoints: '', notes: '', backdate: null };
+
+/** Today in the browser, as YYYY-MM-DD (the server checks against the salon's time zone). */
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 let keySeq = 0;
 const nextKey = () => `line-${(keySeq += 1)}`;
 
@@ -52,10 +58,13 @@ function cartReducer(state, action) {
       return { ...state, loyaltyPoints: action.points };
     case 'notes':
       return { ...state, notes: action.notes };
+    case 'backdate':
+      return { ...state, backdate: action.backdate === null ? null : { ...(state.backdate || {}), ...action.backdate } };
     case 'load':
       return { ...EMPTY_CART, ...action.cart };
     case 'reset':
-      return EMPTY_CART;
+      // Recording several earlier sales in a row keeps the date and reason.
+      return action.keepBackdate ? { ...EMPTY_CART, backdate: state.backdate } : EMPTY_CART;
     default:
       return state;
   }
@@ -75,6 +84,9 @@ function serviceLine(service, employeeIds, usage = null) {
     name: service.name,
     price: service.price,
     priceRange: service.maxPrice ? { min: service.price, max: service.maxPrice } : null,
+    // Services whose rule only covers set prices (e.g. Steaming) are charged one of those.
+    priceOptions: service.financialRule?.priceOptions || null,
+    productsIncluded: service.financialRule ? service.financialRule.productsIncluded !== false : true,
     employeeIds,
     quantity: 1,
     consumption: products.map((p) => ({ productId: p.productId, quantity: String(p.quantity), name: p.name, unit: p.unit })),
@@ -95,7 +107,43 @@ function toPayload(cart) {
     discount: cart.discount.type === 'none' || !Number(cart.discount.value) ? { type: 'none', value: 0 } : { type: cart.discount.type, value: Number(cart.discount.value) },
     loyaltyPoints: Number(cart.loyaltyPoints) || 0,
     notes: cart.notes || undefined,
+    ...(cart.backdate?.soldDate
+      ? { soldDate: cart.backdate.soldDate, soldTime: cart.backdate.soldTime || undefined, backdateReason: cart.backdate.reason || '' }
+      : {}),
   };
+}
+
+/** The quote only needs what is sold, not when or why it is recorded late. */
+const quotePayload = ({ soldDate, soldTime, backdateReason, notes, appointmentId, ...rest }) => rest;
+
+/**
+ * "Record previous sale": the business date (and time) a sale happened on,
+ * and why it is entered late. Created-at is still now; the sale is marked as
+ * recorded later everywhere it appears.
+ */
+function BackdatePanel({ backdate, dispatch }) {
+  const reasonMissing = !backdate.reason || backdate.reason.trim().length < 3;
+  return (
+    <div className="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-warning"><CalendarClock className="size-4" aria-hidden />Recording a previous sale</p>
+        <button type="button" onClick={() => dispatch({ type: 'backdate', backdate: null })} className="rounded p-0.5 text-muted hover:text-fg" aria-label="Stop recording a previous sale"><X className="size-4" /></button>
+      </div>
+      <div className="grid grid-cols-[1fr_8.5rem] gap-2">
+        <Input aria-label="Date of the sale" type="date" max={todayIso()} value={backdate.soldDate || ''} onChange={(e) => dispatch({ type: 'backdate', backdate: { soldDate: e.target.value } })} />
+        <Input aria-label="Time of the sale (optional)" type="time" value={backdate.soldTime || ''} onChange={(e) => dispatch({ type: 'backdate', backdate: { soldTime: e.target.value } })} />
+      </div>
+      <Input
+        aria-label="Why is this sale recorded late?"
+        placeholder="Why is it recorded late? (e.g. power cut, written in the book)"
+        value={backdate.reason || ''}
+        maxLength={255}
+        onChange={(e) => dispatch({ type: 'backdate', backdate: { reason: e.target.value } })}
+        error={reasonMissing && backdate.touched ? 'Give a reason' : undefined}
+      />
+      <p className="text-[11px] text-muted">Payments, commission and reports use this date. Without a time it is recorded at 12:00. Stock is taken out now. No thank-you message is sent.</p>
+    </div>
+  );
 }
 
 /**
@@ -225,9 +273,11 @@ function ServiceUsage({ item, line, dispatch, products, employees, showCosts }) 
   );
 }
 
-function CartPanel({ cart, dispatch, employees, products, showCosts, quote, onCharge, onClose }) {
+function CartPanel({ cart, dispatch, employees, products, showCosts, quote, onCharge, onClose, canBackdate }) {
   const q = quote.data;
   const missingStaff = cart.items.some((i) => i.type === 'service' && !i.employeeIds.length);
+  const backdate = cart.backdate;
+  const backdateIncomplete = Boolean(backdate) && (!backdate.soldDate || !backdate.reason || backdate.reason.trim().length < 3);
   const loyalty = q?.loyalty;
   const { listRef, hiddenBelow, onScroll, showAll } = useCartScroll(cart.items.length);
   const itemCount = cart.items.reduce((n, i) => n + i.quantity, 0);
@@ -247,6 +297,9 @@ function CartPanel({ cart, dispatch, employees, products, showCosts, quote, onCh
             {itemCount ? <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-muted">{itemCount} {itemCount === 1 ? 'item' : 'items'}</span> : null}
           </h2>
           <div className="flex items-center gap-1">
+            {canBackdate && !backdate && !cart.appointment ? (
+              <Button size="xs" variant="ghost" icon={CalendarClock} onClick={() => dispatch({ type: 'backdate', backdate: { soldDate: '', soldTime: '', reason: '' } })}>Previous sale</Button>
+            ) : null}
             {cart.items.length ? <Button size="xs" variant="ghost" icon={Trash2} onClick={() => dispatch({ type: 'reset' })}>Clear</Button> : null}
             {onClose ? <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted" aria-label="Close cart"><X className="size-4" /></button> : null}
           </div>
@@ -254,6 +307,7 @@ function CartPanel({ cart, dispatch, employees, products, showCosts, quote, onCh
         {cart.appointment ? (
           <Badge tone="brand"><CalendarCheck className="size-3" />Checking out {cart.appointment.code}</Badge>
         ) : null}
+        {backdate ? <BackdatePanel backdate={backdate} dispatch={dispatch} /> : null}
         <CustomerPicker label="" value={cart.customer} onChange={(customer) => dispatch({ type: 'customer', customer })} />
         {!cart.customer ? <p className="text-xs text-muted">No customer selected — this will be a walk-in sale (paid in full, no loyalty points).</p> : null}
       </div>
@@ -279,7 +333,16 @@ function CartPanel({ cart, dispatch, employees, products, showCosts, quote, onCh
                       </div>
                     </div>
                     <div className="mt-1.5 flex items-center gap-2">
-                      {item.priceRange ? (
+                      {item.priceOptions ? (
+                        <select
+                          aria-label={`Price for ${item.name}`}
+                          value={String(item.price)}
+                          onChange={(e) => dispatch({ type: 'price', key: item.key, price: Number(e.target.value) })}
+                          className="h-7 w-28 shrink-0 rounded-lg border border-line bg-surface px-2 text-xs tabular-nums"
+                        >
+                          {item.priceOptions.map((p) => <option key={p} value={String(p)}>{formatMoney(p)}</option>)}
+                        </select>
+                      ) : item.priceRange ? (
                         <input
                           aria-label={`Price for ${item.name} (${formatMoney(item.priceRange.min)} to ${formatMoney(item.priceRange.max)})`}
                           title={`${formatMoney(item.priceRange.min)} – ${formatMoney(item.priceRange.max)}`}
@@ -307,8 +370,10 @@ function CartPanel({ cart, dispatch, employees, products, showCosts, quote, onCh
                     {item.type === 'service' && item.employeeIds.length > 1 ? (
                       <p className="mt-1 flex items-center gap-1 text-[11px] text-muted"><Users className="size-3" aria-hidden />Done together · staff share split equally between {item.employeeIds.length}</p>
                     ) : null}
-                    {item.type === 'service' ? (
+                    {item.type === 'service' && item.productsIncluded ? (
                       <ServiceUsage item={item} line={line} dispatch={dispatch} products={products} employees={employees} showCosts={showCosts} />
+                    ) : item.type === 'service' ? (
+                      <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted"><Package className="size-3" aria-hidden />Products for this service are sold separately</p>
                     ) : null}
                   </li>
                 );
@@ -388,8 +453,24 @@ function CartPanel({ cart, dispatch, employees, products, showCosts, quote, onCh
           {showNotes ? (
             <Textarea aria-label="Sale notes" rows={1} compact autoFocus={notesOpen && !cart.notes} placeholder="Notes (optional)" value={cart.notes} onChange={(e) => dispatch({ type: 'notes', notes: e.target.value })} onBlur={() => setNotesOpen(false)} />
           ) : null}
-          <Button size="lg" className="w-full" disabled={!q || quote.isError || quote.isFetching || missingStaff} onClick={onCharge}>
-            {missingStaff ? 'Choose staff for each service' : q ? `Charge ${formatMoney(q.total)}` : 'Calculating…'}
+          <Button
+            size="lg"
+            className="w-full"
+            disabled={!q || quote.isError || quote.isFetching || missingStaff || backdateIncomplete}
+            onClick={() => {
+              if (backdateIncomplete) dispatch({ type: 'backdate', backdate: { touched: true } });
+              else onCharge();
+            }}
+          >
+            {missingStaff
+              ? 'Choose staff for each service'
+              : backdateIncomplete
+                ? 'Enter the date and reason of the previous sale'
+                : !q
+                  ? 'Calculating…'
+                  : backdate
+                    ? `Record ${formatMoney(q.total)} for ${formatDate(backdate.soldDate)}`
+                    : `Charge ${formatMoney(q.total)}`}
           </Button>
         </div>
       ) : null}
@@ -456,7 +537,8 @@ export default function PosPage() {
   }, [params, setParams]);
 
   const payload = useMemo(() => toPayload(cart), [cart]);
-  const debouncedPayload = useDebounce(payload, 250);
+  const quoteBody = useMemo(() => quotePayload(payload), [payload]);
+  const debouncedPayload = useDebounce(quoteBody, 250);
   const quote = useQuery({
     queryKey: ['sales', 'quote', debouncedPayload],
     queryFn: () => salesApi.quote(debouncedPayload),
@@ -482,7 +564,7 @@ export default function PosPage() {
       setPaying(false);
       setCartOpen(false);
       setCompletedSale(res.data);
-      dispatch({ type: 'reset' });
+      dispatch({ type: 'reset', keepBackdate: Boolean(cart.backdate) });
       qc.invalidateQueries({ queryKey: ['products'] });
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['appointments'] });
@@ -502,6 +584,7 @@ export default function PosPage() {
       products={usable.data || []}
       showCosts={showCosts}
       quote={quote}
+      canBackdate={can('sales.backdate')}
       onCharge={() => setPaying(true)}
       onClose={isDesktop ? undefined : () => setCartOpen(false)}
     />

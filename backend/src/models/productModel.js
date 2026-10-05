@@ -28,8 +28,9 @@ async function list(filters) {
   const where = ['p.branch_id = ?'];
   const params = [filters.branchId];
   if (filters.search) {
-    where.push('(p.name LIKE ? OR p.sku LIKE ? OR p.barcode = ?)');
-    params.push(contains(filters.search), startsWith(filters.search), filters.search);
+    // Name, SKU, barcode or category ("hair care").
+    where.push('(p.name LIKE ? OR p.sku LIKE ? OR p.barcode = ? OR c.name LIKE ?)');
+    params.push(contains(filters.search), startsWith(filters.search), filters.search, contains(filters.search));
   }
   if (filters.categoryId) {
     where.push('p.category_id = ?');

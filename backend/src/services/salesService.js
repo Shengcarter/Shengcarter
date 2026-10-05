@@ -894,7 +894,7 @@ async function voidSale(saleId, { reason }, ctx) {
       action: 'sale.voided', entityType: 'sale', entityId: saleId,
       description: `Voided ${sale.invoice_number} (${sale.total}) — ${reason}`,
       metadata: { total: Number(sale.total), amountPaid: Number(sale.amount_paid), soldAt: sale.sold_at, source: sale.source },
-      before: { status: sale.status, total: Number(sale.total), amountPaid: Number(sale.amount_paid) },
+      before: { status: sale.status },
       after: { status: 'voided', reason },
     }, conn);
   });

@@ -20,7 +20,7 @@ const IMPORTS = [
     permission: 'sales.import',
     icon: ReceiptText,
     title: 'Past sales',
-    description: 'Sales recorded before the system, e.g. in an Excel sheet. They count in reports, staff performance and customer history, but do not change stock or create commission.',
+    description: 'Sales recorded before the system, e.g. in an Excel sheet. Each service is split with its own financial rule, as at the till; they count in reports, staff performance and customer history, but do not change stock, and staff shares are recorded as commission already paid.',
     to: '/pos/sales?import=1',
     action: 'Import past sales',
   },

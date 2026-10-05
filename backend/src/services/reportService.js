@@ -866,7 +866,7 @@ async function costing(params, ctx) {
                  WHERE f.branch_id = ? AND s.status = 'completed' AND f.performed_at >= ? AND f.performed_at < ?`;
   const args = [branchId, period.start, period.end];
 
-  const [current, previous, running, seriesRows, staffRows, serviceRows, productRows, flaggedRows] = await Promise.all([
+  const [current, previous, running, seriesRows, staffRows, serviceRows, productRows, flaggedRows, sourceRows, methodRows, lateRows] = await Promise.all([
     costingTotals(branchId, period.start, period.end),
     costingTotals(branchId, period.previous.start, period.previous.end),
     runningCostTotal(branchId, period.from, period.to),
@@ -906,6 +906,31 @@ async function costing(params, ctx) {
        ${scope} AND f.margin_status <> 'positive' ORDER BY f.review_status = 'pending' DESC, f.performed_at DESC LIMIT 200`,
       args,
     ),
+    // How the services were entered: at the till, recorded later, imported.
+    db.query(
+      `SELECT s.source, COUNT(*) AS services, COUNT(DISTINCT s.id) AS sales, SUM(f.price) AS revenue, SUM(f.product_cost) AS productCost,
+              SUM(f.consumption_cost) AS consumptionCost, SUM(f.operations_amount) AS operations, SUM(f.staff_pool) AS staffEarnings, SUM(f.salon_profit) AS salonProfit
+       ${scope} GROUP BY s.source`,
+      args,
+    ),
+    // Which calculation: general formula, a service's fixed amounts, or its band using the general formula.
+    db.query(
+      `SELECT f.calculation_method AS method, COUNT(*) AS services, SUM(f.price) AS revenue, SUM(f.operations_amount) AS operations,
+              SUM(f.staff_pool) AS staffEarnings, SUM(f.salon_profit) AS salonProfit
+       ${scope} GROUP BY f.calculation_method`,
+      args,
+    ),
+    // Sales recorded for an earlier date, moved to another date, or voided in the period (for control).
+    db.query(
+      `SELECT s.id, s.invoice_number AS invoiceNumber, s.status, s.source, s.total, s.sold_at AS soldAt, s.original_sold_at AS originalSoldAt,
+              s.created_at AS createdAt, s.backdate_reason AS backdateReason, s.void_reason AS voidReason, s.voided_at AS voidedAt,
+              u.full_name AS enteredBy, vb.full_name AS voidedBy
+       FROM sales s JOIN users u ON u.id = s.cashier_id LEFT JOIN users vb ON vb.id = s.voided_by
+       WHERE s.branch_id = ? AND s.sold_at >= ? AND s.sold_at < ?
+         AND (s.is_backdated = 1 OR s.status = 'voided' OR s.original_sold_at <> s.sold_at)
+       ORDER BY s.sold_at DESC LIMIT 200`,
+      args,
+    ),
   ]);
 
   const series = fillSeries(period, seriesRows, {
@@ -939,6 +964,19 @@ async function costing(params, ctx) {
       id: r.id, name: r.name, unit: r.unit, quantity: toNumber(r.quantity, 3), cost: money(r.cost), timesUsed: Number(r.timesUsed), services: r.services || '',
     })),
     flagged: flaggedRows.map((r) => ({ ...r, price: money(r.price), productCost: money(r.productCost), salonProfit: money(r.salonProfit) })),
+    bySource: ['pos', 'backdated', 'import'].map((source) => {
+      const r = sourceRows.find((x) => x.source === source) || {};
+      return {
+        source, sales: Number(r.sales || 0), services: Number(r.services || 0), revenue: money(r.revenue || 0), productCost: money(r.productCost || 0),
+        consumptionCost: money(r.consumptionCost || 0), operations: money(r.operations || 0), staffEarnings: money(r.staffEarnings || 0), salonProfit: money(r.salonProfit || 0),
+      };
+    }),
+    byMethod: methodRows.map((r) => ({
+      method: r.method, services: Number(r.services), revenue: money(r.revenue), operations: money(r.operations), staffEarnings: money(r.staffEarnings), salonProfit: money(r.salonProfit),
+    })),
+    corrections: lateRows.map((r) => ({
+      ...r, total: money(r.total), moved: Boolean(r.originalSoldAt && new Date(r.originalSoldAt).getTime() !== new Date(r.soldAt).getTime()),
+    })),
   };
 }
 

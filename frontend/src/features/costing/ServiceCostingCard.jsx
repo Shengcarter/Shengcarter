@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { CircleCheck, History, Package, PencilLine } from 'lucide-react';
 import { Button, Card, Input, Modal, Textarea } from '../../components/ui';
 import { cn } from '../../utils/cn';
-import { formatMoney, formatNumber } from '../../utils/format';
+import { formatDate, formatMoney, formatNumber } from '../../utils/format';
 import { usePermission } from '../../hooks';
 import { useEmployeeOptions } from '../services/api';
 import { salesKeys } from '../pos/api';
@@ -151,7 +151,9 @@ export function ServiceCostingCard({ sale }) {
   const [history, setHistory] = useState(null);
   const services = sale.items.filter((i) => i.itemType === 'service' && (i.hasCosting || i.productsUsed?.length));
   if (!services.length) return null;
-  const canCorrect = can('sales.correct') && sale.status === 'completed' && !sale.isImported;
+  // Sales from earlier days need the "change past sales" permission as well.
+  const today = formatDate(new Date().toISOString(), 'yyyy-MM-dd') === formatDate(sale.soldAt, 'yyyy-MM-dd');
+  const canCorrect = can('sales.correct') && sale.status === 'completed' && (today || can('sales.edit_history'));
 
   return (
     <Card className="p-5">

@@ -1,6 +1,7 @@
 import { AlertTriangle, X } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatMoney, formatNumber } from '../../utils/format';
+import { ProductPicker } from './ProductPicker';
 
 const quantityOf = (row) => Number(row.quantity) || 0;
 
@@ -40,13 +41,17 @@ export function ProductsUsedEditor({ value = [], onChange, products = [], showCo
         {value.map((row, index) => {
           const product = products.find((p) => p.id === row.productId);
           const name = product?.name || row.name || 'Product';
+          const sku = product?.sku || row.sku || null;
           const unit = product?.unit || row.unit || '';
           const unitCost = row.unitCost !== undefined && row.unitCost !== '' ? Number(row.unitCost) : product?.unitCost;
           const short = product && quantityOf(row) > product.inStock;
           return (
             <li key={row.productId} className="rounded-lg bg-surface-2/60 px-2 py-1.5">
               <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-xs font-medium" title={name}>{name}</span>
+                <span className="min-w-0 flex-1 truncate text-xs font-medium" title={sku ? `${name} · ${sku}` : name}>
+                  {name}
+                  {sku ? <span className="ml-1 font-mono text-[10px] font-normal text-muted">{sku}</span> : null}
+                </span>
                 <input
                   id={`${idPrefix}-${row.productId}`}
                   aria-label={`Quantity of ${name} (${unit})`}
@@ -87,20 +92,7 @@ export function ProductsUsedEditor({ value = [], onChange, products = [], showCo
       </ul>
       <div className="flex items-center gap-2">
         {options.length ? (
-          <select
-            aria-label="Add a product used"
-            value=""
-            onChange={(e) => {
-              const id = Number(e.target.value);
-              if (id) onChange([...value, { productId: id, quantity: '1' }]);
-            }}
-            className="h-7 min-w-0 flex-1 rounded-lg border border-dashed border-line bg-surface px-2 text-xs text-muted"
-          >
-            <option value="">+ Add product used</option>
-            {options.map((p) => (
-              <option key={p.id} value={p.id}>{p.name} ({p.unit}){p.isRetail ? '' : ' · salon use'}</option>
-            ))}
-          </select>
+          <ProductPicker products={options} onSelect={(p) => onChange([...value, { productId: p.id, quantity: '1' }])} />
         ) : <span className="flex-1" />}
         {showCosts && value.length ? <span className="text-xs text-muted">Products: <span className="font-semibold text-fg tabular-nums">{formatMoney(total)}</span></span> : null}
       </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Banknote, FileUp, Hourglass, ReceiptText, ShoppingBag, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Banknote, CalendarClock, FileUp, Hourglass, ReceiptText, ShoppingBag, TrendingUp } from 'lucide-react';
 import { Badge, Button, ButtonLink, Card, DataTable, DateRange, EmptyState, FilterGroup, FilterSelect, PageHeader, Pagination, SearchInput, StatCard, StatusBadge } from '../../components/ui';
 import { formatDateTime, formatMoney, formatNumber, titleCase, todayISO } from '../../utils/format';
 import { usePermission, useDocumentTitle } from '../../hooks';
@@ -20,7 +20,7 @@ export default function SalesPage() {
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setSearchParams, can]);
-  const [params, setParams] = useState({ page: 1, limit: 20, search: '', from: todayISO().slice(0, 8) + '01', to: todayISO(), status: '', paymentStatus: '', method: '' });
+  const [params, setParams] = useState({ page: 1, limit: 20, search: '', from: todayISO().slice(0, 8) + '01', to: todayISO(), status: '', paymentStatus: '', method: '', source: '' });
   const sales = useSales(params);
   const set = (patch) => setParams((p) => ({ ...p, page: 1, ...patch }));
   const summary = sales.data?.summary;
@@ -49,26 +49,34 @@ export default function SalesPage() {
             <p>Bring in sales you recorded elsewhere, for example in an Excel sheet before using this system. One row per service or product; rows with the same receipt number become one sale.</p>
             <p>Services, products and staff are matched by name, so <strong>add your services, products and staff first</strong> (the template lists them). Customers are matched by phone number; a new phone with a name adds the customer.</p>
             <p>When several people did a service together, put all their names in the Staff column, e.g. “Neema &amp; Rehema”.</p>
+            <p>Every service is split with its own financial rule, exactly as at the till. A row whose service has no rule for its amount is flagged and not imported — an administrator sets the rule under Services, then you import that row again.</p>
           </>
         }
-        notice="Imported sales count in reports, staff performance and customer history. They do not change stock, earn loyalty points or create staff commission, because that already happened outside the system. Sales with a receipt number that was imported before are skipped."
+        notice="Imported sales count in reports, staff performance and customer history. They do not change stock or earn loyalty points. Staff shares are recorded as commission already paid (settled outside the system), so they never enter a new payout. Sales with a receipt number that was imported before are skipped."
         columns={[
           { key: 'date', header: 'Date' },
           { key: 'receipt', header: 'Receipt' },
           { key: 'item', header: 'Item' },
           { key: 'customer', header: 'Customer' },
           { key: 'amount', header: 'Amount', align: 'right', render: (d) => (d.amount === null ? '—' : formatMoney(d.amount)) },
+          {
+            key: 'split',
+            header: 'Operations · staff · profit',
+            align: 'right',
+            render: (d) => (d.split ? <span className="whitespace-nowrap tabular-nums">{formatMoney(d.split.operations)} · {formatMoney(d.split.staffPool)} · {formatMoney(d.split.salonProfit)}</span> : '—'),
+          },
         ]}
         summaryTiles={(s) => [
           { label: 'Sales', value: formatNumber(s.sales) },
           { label: 'Total amount', value: formatMoney(s.total) },
           { label: 'New customers', value: formatNumber(s.newCustomers) },
+          ...(s.ruleProblems ? [{ label: 'Rows without a rule', value: formatNumber(s.ruleProblems) }] : []),
         ]}
         invalidate={[['sales'], ['customers'], ['dashboard'], ['reports']]}
       />
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Transactions" icon={ReceiptText} value={formatNumber(summary?.count)} loading={sales.isPending} />
-        <StatCard label="Sales total" icon={TrendingUp} value={formatMoney(summary?.total)} loading={sales.isPending} caption="Excludes refunds" index={1} />
+        <StatCard label="Sales total" icon={TrendingUp} value={formatMoney(summary?.total)} loading={sales.isPending} caption="Excludes refunds and voided sales" index={1} />
         <StatCard label="Collected" icon={Banknote} tone="success" value={formatMoney(summary?.paid)} loading={sales.isPending} index={2} />
         <StatCard label="Outstanding" icon={Hourglass} value={formatMoney(summary?.balance)} loading={sales.isPending} tone={summary?.balance > 0 ? 'warning' : 'neutral'} index={3} />
       </div>
@@ -87,10 +95,17 @@ export default function SalesPage() {
               <option value="">Any method</option>
               {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
             </FilterSelect>
-            <FilterSelect label="Status" className="col-span-2" value={params.status} onChange={(status) => set({ status })}>
-              <option value="">Completed & refunded</option>
+            <FilterSelect label="Status" value={params.status} onChange={(status) => set({ status })}>
+              <option value="">Any status</option>
               <option value="completed">Completed</option>
               <option value="refunded">Refunded</option>
+              <option value="voided">Voided</option>
+            </FilterSelect>
+            <FilterSelect label="Entered" value={params.source} onChange={(source) => set({ source })}>
+              <option value="">However entered</option>
+              <option value="pos">At the till</option>
+              <option value="backdated">Recorded later</option>
+              <option value="import">Imported</option>
             </FilterSelect>
           </FilterGroup>
         </div>
@@ -102,13 +117,22 @@ export default function SalesPage() {
           onRowClick={(s) => navigate(`/pos/sales/${s.id}`)}
           empty={<EmptyState icon={ReceiptText} title="No transactions found" description="Try a wider date range." />}
           columns={[
-            { key: 'invoiceNumber', header: 'Invoice', primary: true, render: (s) => <div><p className="flex items-center gap-1.5 font-medium">{s.invoiceNumber}{s.isImported ? <Badge tone="info">Imported</Badge> : null}</p><p className="text-xs text-muted">{formatDateTime(s.soldAt)}</p></div> },
+            { key: 'invoiceNumber', header: 'Invoice', primary: true, render: (s) => (
+              <div>
+                <p className="flex items-center gap-1.5 font-medium">
+                  {s.invoiceNumber}
+                  {s.isImported ? <Badge tone="info">Imported</Badge> : null}
+                  {s.source === 'backdated' ? <span title={`Entered ${formatDateTime(s.createdAt)}`}><Badge tone="warning"><CalendarClock className="size-3" />Recorded later</Badge></span> : null}
+                </p>
+                <p className="text-xs text-muted">{formatDateTime(s.soldAt)}</p>
+              </div>
+            ) },
             { key: 'customerName', header: 'Customer', render: (s) => s.customerName || <span className="text-muted">Walk-in</span> },
             { key: 'methods', header: 'Paid by', hideOnMobile: true, render: (s) => (s.methods ? s.methods.split(',').map(titleCase).join(', ') : '—') },
             { key: 'cashierName', header: 'Cashier', hideOnMobile: true },
-            { key: 'total', header: 'Total', align: 'right', render: (s) => <span className={s.status === 'refunded' ? 'text-muted line-through' : 'font-medium'}>{formatMoney(s.total)}</span> },
+            { key: 'total', header: 'Total', align: 'right', render: (s) => <span className={s.status !== 'completed' ? 'text-muted line-through' : 'font-medium'}>{formatMoney(s.total)}</span> },
             { key: 'balanceDue', header: 'Balance', align: 'right', render: (s) => (s.balanceDue > 0 ? <span className="text-warning">{formatMoney(s.balanceDue)}</span> : '—') },
-            { key: 'status', header: 'Status', render: (s) => <StatusBadge status={s.status === 'refunded' ? 'refunded' : s.paymentStatus} /> },
+            { key: 'status', header: 'Status', render: (s) => <StatusBadge status={s.status === 'completed' ? s.paymentStatus : s.status} /> },
           ]}
         />
         <Pagination pagination={sales.data?.pagination} onPageChange={(page) => setParams((p) => ({ ...p, page }))} />

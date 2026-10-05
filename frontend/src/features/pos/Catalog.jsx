@@ -81,7 +81,7 @@ export function Catalog({ onAddService, onAddProduct, inCart }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={tab === 'services' ? 'Search services…' : 'Search or scan barcode / SKU…'}
+            placeholder={tab === 'services' ? 'Search services…' : 'Search name, SKU, barcode or category…'}
             aria-label="Search catalog or scan barcode"
             className="h-10 w-full rounded-xl border border-line bg-surface pr-3 pl-9 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none"
           />
@@ -109,23 +109,32 @@ export function Catalog({ onAddService, onAddProduct, inCart }) {
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">{Array.from({ length: 9 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>
           ) : serviceList.length ? (
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
-              {serviceList.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => onAddService(s)}
-                  className="group flex min-h-24 flex-col justify-between rounded-2xl border border-line bg-surface p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-brand-500/50 hover:shadow-lg active:translate-y-0"
-                >
-                  <span className="flex items-start justify-between gap-2">
-                    <span className="text-sm font-medium text-fg">{s.name}</span>
-                    <Scissors className="size-3.5 shrink-0 text-muted group-hover:text-accent" aria-hidden />
-                  </span>
-                  <span className="mt-2 flex items-end justify-between gap-2">
-                    <span className="text-xs text-muted">{formatDuration(s.durationMinutes)}</span>
-                    <span className="text-sm font-semibold text-accent">{formatMoney(s.price)}</span>
-                  </span>
-                </button>
-              ))}
+              {serviceList.map((s) => {
+                // A service without a financial rule cannot be sold until an administrator sets one.
+                const notSet = s.financialRule?.method === 'unconfigured';
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={notSet}
+                    title={notSet ? 'Financial rule not set: ask an administrator to set it under Services' : undefined}
+                    onClick={() => onAddService(s)}
+                    className="group flex min-h-24 flex-col justify-between rounded-2xl border border-line bg-surface p-3.5 text-left transition-all enabled:hover:-translate-y-0.5 enabled:hover:border-brand-500/50 enabled:hover:shadow-lg enabled:active:translate-y-0 disabled:opacity-50"
+                  >
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-medium text-fg">{s.name}</span>
+                      <Scissors className="size-3.5 shrink-0 text-muted group-hover:text-accent" aria-hidden />
+                    </span>
+                    <span className="mt-2 flex items-end justify-between gap-2">
+                      <span className="text-xs text-muted">{notSet ? 'Rule not set' : formatDuration(s.durationMinutes)}</span>
+                      <span className="text-right text-sm font-semibold text-accent">
+                        {formatMoney(s.price)}
+                        {s.maxPrice ? <span className="block text-[11px] font-normal text-muted">{s.financialRule?.priceOptions ? `${s.financialRule.priceOptions.length} prices` : `to ${formatMoney(s.maxPrice)}`}</span> : null}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           ) : (
             <EmptyState icon={Scissors} title="No services found" />
@@ -145,7 +154,10 @@ export function Catalog({ onAddService, onAddProduct, inCart }) {
                   className="group flex min-h-24 flex-col justify-between rounded-2xl border border-line bg-surface p-3.5 text-left transition-all enabled:hover:-translate-y-0.5 enabled:hover:border-brand-500/50 enabled:hover:shadow-lg disabled:opacity-45"
                 >
                   <span className="flex items-start justify-between gap-2">
-                    <span className="text-sm font-medium text-fg">{p.name}</span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-fg">{p.name}</span>
+                      <span className="block truncate font-mono text-[11px] text-muted">{p.sku}{p.categoryName ? <span className="font-sans"> · {p.categoryName}</span> : null}</span>
+                    </span>
                     <Package className="size-3.5 shrink-0 text-muted group-hover:text-accent" aria-hidden />
                   </span>
                   <span className="mt-2 flex items-end justify-between gap-2">

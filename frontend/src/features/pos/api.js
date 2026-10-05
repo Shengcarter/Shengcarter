@@ -32,6 +32,8 @@ export const salesApi = {
   create: (body) => http.post('/sales', body),
   addPayment: (id, body) => http.post(`/sales/${id}/payments`, body),
   refund: (id, reason) => http.post(`/sales/${id}/refund`, { reason }),
+  voidSale: (id, reason) => http.post(`/sales/${id}/void`, { reason }),
+  changeDate: (id, body) => http.patch(`/sales/${id}/date`, body),
   appointmentCheckout: (id) => http.get(`/sales/appointment/${id}`).then((r) => r.data),
 };
 

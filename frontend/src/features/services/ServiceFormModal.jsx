@@ -12,6 +12,8 @@ import { ProductsUsedEditor, cleanUsage, usageCost } from '../costing/ProductsUs
 import { useUsableProducts } from '../costing/api';
 import { useSplitRules } from '../costing/rules';
 import { serviceApi, serviceKeys, useEmployeeOptions, useServiceCategories } from './api';
+import { FinancialRuleModal } from './FinancialRuleModal';
+import { describeRule } from './ruleText';
 
 const schema = z.object({
   name: z.string().trim().min(1, 'Service name is required').max(120),
@@ -44,6 +46,8 @@ export function ServiceFormModal({ open, onClose, service }) {
   const showCosts = can('reports.financial') || can('sales.correct');
   const rules = useSplitRules();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [ruleOpen, setRuleOpen] = useState(false);
+  const canSeeRule = can('services.rules') || can('reports.financial');
   const { register, handleSubmit, reset, control, setError, watch, formState: { errors, isSubmitting } } = useForm({ resolver: zodResolver(schema) });
 
   useEffect(() => {
@@ -95,7 +99,9 @@ export function ServiceFormModal({ open, onClose, service }) {
   const currency = getFormatSettings().currency;
   const [price, recipe] = watch(['price', 'recipe']);
   const expectedCost = usageCost(recipe || [], products.data || []);
-  const example = showCosts ? estimate(Number(price), expectedCost, rules) : null;
+  // The general formula's estimate only applies to services on the general formula.
+  const onGeneral = !service?.financialRule || service.financialRule.method === 'general';
+  const example = showCosts && onGeneral ? estimate(Number(price), expectedCost, rules) : null;
 
   return (
     <>
@@ -128,6 +134,17 @@ export function ServiceFormModal({ open, onClose, service }) {
           />
           <Textarea label="Description" rows={2} className="sm:col-span-2" error={errors.description?.message} {...register('description')} />
           <Controller control={control} name="isActive" render={({ field }) => <Switch className="sm:col-span-2" label="Active" description="Inactive services cannot be booked or sold." checked={field.value} onChange={field.onChange} />} />
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line p-3 sm:col-span-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Financial rule</p>
+              <p className={cn('text-xs', service?.financialRule?.method === 'unconfigured' ? 'text-warning' : 'text-muted')}>
+                {isEdit ? describeRule(service.financialRule) : 'New services start on the general formula; set their own rule after saving.'}
+              </p>
+            </div>
+            {isEdit && canSeeRule ? (
+              <Button size="sm" variant="secondary" onClick={() => setRuleOpen(true)}>{can('services.rules') ? 'Change rule' : 'View rule'}</Button>
+            ) : null}
+          </div>
           <div className="rounded-xl border border-line p-3 sm:col-span-2">
             <p className="text-sm font-medium">Products normally used</p>
             <p className="mb-2 text-xs text-muted">
@@ -175,6 +192,7 @@ export function ServiceFormModal({ open, onClose, service }) {
           </div>
         </form>
       </Modal>
+      {isEdit ? <FinancialRuleModal open={ruleOpen} onClose={() => setRuleOpen(false)} service={service} /> : null}
       <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}

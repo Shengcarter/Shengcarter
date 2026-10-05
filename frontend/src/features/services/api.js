@@ -31,7 +31,19 @@ export function useEmployeeOptions(params = {}, options = {}) {
   });
 }
 
+/** A service's financial rule, its versions and warnings (services.rules or reports.financial). */
+export function useFinancialRule(serviceId, options = {}) {
+  return useQuery({
+    queryKey: ['services', serviceId, 'financial-rule'],
+    queryFn: () => http.get(`/services/${serviceId}/financial-rule`).then((r) => r.data),
+    enabled: Boolean(serviceId),
+    ...options,
+  });
+}
+
 export const serviceApi = {
+  saveRule: (id, body) => http.put(`/services/${id}/financial-rule`, body),
+  previewRule: (body) => http.post('/services/financial-rule/preview', body).then((r) => r.data),
   create: (body) => http.post('/services', body),
   update: (id, body) => http.patch(`/services/${id}`, body),
   remove: (id) => http.delete(`/services/${id}`),

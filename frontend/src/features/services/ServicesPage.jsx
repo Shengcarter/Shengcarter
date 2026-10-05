@@ -8,11 +8,16 @@ import { cn } from '../../utils/cn';
 import { useServiceCategories, useServices } from './api';
 import { ServiceFormModal } from './ServiceFormModal';
 import { CategoriesModal } from './CategoriesModal';
+import { FinancialRuleModal } from './FinancialRuleModal';
+import { describeRule, ruleTone } from './ruleText';
 
 export default function ServicesPage() {
   useDocumentTitle('Services');
   const can = usePermission();
   const manage = can('services.manage');
+  // People who configure rules or see the finances (but do not edit the menu) open the rule directly.
+  const rulesOnly = !manage && (can('services.rules') || can('reports.financial'));
+  const [ruleService, setRuleService] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState({ search: '', categoryId: '', status: manage ? '' : 'active' });
   const services = useServices(filters);
@@ -44,6 +49,10 @@ export default function ServicesPage() {
   }, [services.data]);
 
   const open = (service) => {
+    if (rulesOnly && service) {
+      setRuleService(service);
+      return;
+    }
     if (!manage) return;
     setEditing(service);
     setFormOpen(true);
@@ -109,8 +118,8 @@ export default function ServicesPage() {
                 {items.map((s) => (
                   <Card
                     key={s.id}
-                    as={manage ? 'button' : 'div'}
-                    type={manage ? 'button' : undefined}
+                    as={manage || rulesOnly ? 'button' : 'div'}
+                    type={manage || rulesOnly ? 'button' : undefined}
                     onClick={() => open(s)}
                     className={cn('flex flex-col p-4 text-left', manage && 'transition-colors hover:border-brand-500/40', !s.isActive && 'opacity-60')}
                   >
@@ -134,6 +143,9 @@ export default function ServicesPage() {
                           </Badge>
                         </span>
                       ) : null}
+                      {s.financialRule && s.financialRule.method !== 'general' ? (
+                        <span title={describeRule(s.financialRule)}><Badge tone={ruleTone(s.financialRule)}>{s.financialRule.method === 'unconfigured' ? 'Rule not set' : s.financialRule.priceOptions ? 'Fixed amounts' : 'Price bands'}</Badge></span>
+                      ) : null}
                       {!s.isActive ? <Badge tone="danger">Inactive</Badge> : null}
                       <div className="ml-auto flex -space-x-2">
                         {s.employees.slice(0, 4).map((e) => <Avatar key={e.id} name={e.fullName} size="xs" className="ring-2 ring-surface" />)}
@@ -151,6 +163,7 @@ export default function ServicesPage() {
 
       <ServiceFormModal open={formOpen} onClose={() => setFormOpen(false)} service={editing} />
       <CategoriesModal open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
+      <FinancialRuleModal open={Boolean(ruleService)} onClose={() => setRuleService(null)} service={ruleService} />
     </div>
   );
 }

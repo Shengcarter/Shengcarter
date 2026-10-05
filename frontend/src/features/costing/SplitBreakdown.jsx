@@ -28,16 +28,21 @@ export function MarginBadge({ status, reviewStatus }) {
 export function SplitBreakdown({ split, staff = [], className, compact = false }) {
   if (!split) return null;
   const rates = split.rates || { operations: split.operationsRate, employee: split.staffRate, profit: split.profitRate };
+  // Fixed-amount rules (e.g. Steaming) have no percentages.
+  const percent = (value, suffix = '') => (value === null || value === undefined ? '' : ` (${value}%${suffix})`);
   const staffRate = rates.employee ?? rates.staff;
   const afterProducts = split.amountAfterProducts ?? split.price - split.productCost;
   const loss = afterProducts < 0;
+  const method = split.calculationMethod || split.method;
+  const consumption = split.consumptionCost ?? split.productCost;
+  const notDeducted = consumption > 0 && !split.productCost;
   const rows = [
     { key: 'price', label: 'Customer paid', value: split.price, strong: true },
-    { key: 'productCost', label: 'Products used', value: -split.productCost },
+    { key: 'productCost', label: notDeducted ? 'Products used (not deducted by this rule)' : 'Products used', value: -split.productCost },
     { key: 'after', label: 'Left after products', value: afterProducts, muted: true },
-    { key: 'operations', label: `Operations (${rates.operations}%)`, value: -split.operations },
-    { key: 'staffPool', label: `Staff (${staffRate}% of the rest)`, value: split.staffPool },
-    { key: 'salonProfit', label: loss ? 'Salon loss' : `Salon profit (${rates.profit}% of the rest)`, value: split.salonProfit, strong: true },
+    { key: 'operations', label: `Operations${percent(rates.operations)}`, value: -split.operations },
+    { key: 'staffPool', label: `Staff${percent(staffRate, ' of the rest')}`, value: split.staffPool },
+    { key: 'salonProfit', label: loss ? 'Salon loss' : `Salon profit${percent(rates.profit, ' of the rest')}`, value: split.salonProfit, strong: true },
   ];
 
   return (
@@ -64,6 +69,14 @@ export function SplitBreakdown({ split, staff = [], className, compact = false }
             </div>
           ))}
         </dl>
+      ) : null}
+      {method === 'band' || method === 'band_general' || notDeducted || split.productCostBasis === 'recipe_estimate' ? (
+        <p className="text-xs text-muted">
+          {method === 'band' ? `Service rule${split.band?.label ? `, ${split.band.label}` : ''}: fixed amounts.` : method === 'band_general' ? `Service rule${split.band?.label ? `, ${split.band.label}` : ''}: general formula.` : ''}
+          {notDeducted ? ` Products used cost ${formatMoney(consumption)} (recorded and taken from stock).` : ''}
+          {split.productCostBasis === 'recipe_estimate' ? ' Product cost estimated from the service\'s usual products (imported sale).' : ''}
+          {split.ruleVersion ? ` Rule version ${split.ruleVersion}.` : ''}
+        </p>
       ) : null}
       {staff.length > 1 ? (
         <p className="text-xs text-muted">

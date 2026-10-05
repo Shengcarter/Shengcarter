@@ -62,6 +62,7 @@ const STATUS_TONES = {
   partial: 'warning',
   unpaid: 'danger',
   refunded: 'neutral',
+  voided: 'danger',
   active: 'success',
   inactive: 'neutral',
   on_leave: 'warning',
