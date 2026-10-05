@@ -14,8 +14,8 @@ export function SplashScreen() {
   );
 }
 
-/** Requires a signed-in user; enforces the first-login password change. */
-export function RequireAuth({ children, allowPasswordChange = false }) {
+/** Requires a signed-in user; enforces the first-login password change and required two-step sign-in. */
+export function RequireAuth({ children, allowPasswordChange = false, allowTwoFactorSetup = false }) {
   const status = useAuthStore((s) => s.status);
   const user = useAuthStore((s) => s.user);
   const location = useLocation();
@@ -23,6 +23,7 @@ export function RequireAuth({ children, allowPasswordChange = false }) {
   if (status === 'loading') return <SplashScreen />;
   if (status !== 'authenticated') return <Navigate to="/login" replace state={{ from: location }} />;
   if (user?.mustChangePassword && !allowPasswordChange) return <Navigate to="/change-password" replace />;
+  if (!user?.mustChangePassword && user?.twoFactorSetupRequired && !allowTwoFactorSetup) return <Navigate to="/setup-two-step" replace />;
   return children;
 }
 

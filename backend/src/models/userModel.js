@@ -6,7 +6,7 @@ const { getPaging, getSort, paginate } = require('../utils/pagination');
 
 /** Data access for the `users` table. password_hash is only read by auth code. */
 const PUBLIC_COLUMNS = `u.id, u.full_name, u.email, u.phone, u.avatar, u.role_id, u.branch_id, u.is_active,
-  u.must_change_password, u.failed_login_attempts, u.locked_until, u.last_login_at, u.is_demo,
+  u.must_change_password, u.failed_login_attempts, u.locked_until, u.last_login_at, u.is_demo, (u.totp_enabled_at IS NOT NULL) AS two_factor_enabled,
   u.created_at, u.updated_at, r.slug AS role_slug, r.name AS role_name, b.name AS branch_name,
   e.id AS employee_id, e.full_name AS employee_name`;
 
@@ -15,19 +15,23 @@ const JOINS = `FROM users u
   LEFT JOIN branches b ON b.id = u.branch_id
   LEFT JOIN employees e ON e.user_id = u.id`;
 
-const BOOL_KEYS = ['must_change_password'];
+const BOOL_KEYS = ['must_change_password', 'two_factor_enabled'];
 
 async function findAuthByEmail(email) {
   return db.queryOne(
     `SELECT u.id, u.email, u.password_hash, u.is_active, u.failed_login_attempts, u.locked_until,
-            u.must_change_password, u.full_name
+            u.must_change_password, u.full_name, u.totp_enabled_at
      FROM users u WHERE u.email = ?`,
     [String(email).trim().toLowerCase()],
   );
 }
 
 async function findAuthById(id, conn) {
-  return db.queryOne('SELECT id, email, password_hash, is_active, full_name FROM users WHERE id = ?', [id], conn);
+  return db.queryOne(
+    'SELECT id, email, password_hash, is_active, full_name, failed_login_attempts, locked_until, totp_enabled_at FROM users WHERE id = ?',
+    [id],
+    conn,
+  );
 }
 
 async function findById(id, conn) {

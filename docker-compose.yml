@@ -57,6 +57,16 @@ services:
       mysql:
         condition: service_healthy
 
+  # Optional virus scanning of uploads (ClamAV, about 1–2 GB of memory).
+  # Start with:  docker compose --profile antivirus up -d
+  # and set CLAMAV_HOST=clamav (and MALWARE_SCAN_REQUIRED=true) in .env.
+  clamav:
+    image: clamav/clamav:stable
+    profiles: ["antivirus"]
+    restart: unless-stopped
+    volumes:
+      - clamav-db:/var/lib/clamav
+
   frontend:
     build:
       context: .
@@ -72,3 +82,4 @@ volumes:
   mysql-data:
   uploads:
   backups:
+  clamav-db:

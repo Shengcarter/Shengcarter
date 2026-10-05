@@ -31,6 +31,17 @@ async function start() {
     process.exit(1);
   }
 
+  // How this installation is protected; a production server refuses the example signing secret.
+  const { configurationChecks } = require('./services/securityCheckService');
+  for (const item of configurationChecks()) {
+    if (item.status === 'ok') continue;
+    if (config.isProduction && item.id === 'jwt_secret') {
+      logger.fatal(item.detail);
+      process.exit(1);
+    }
+    if (config.isProduction || item.status === 'fail') logger.warn(`Security: ${item.label} — ${item.detail}`);
+  }
+
   const app = createApp();
   const server = app.listen(config.port, config.host, () => {
     logger.info(`${config.appName} is running`);

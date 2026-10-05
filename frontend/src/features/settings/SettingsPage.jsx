@@ -1,6 +1,6 @@
 import { Suspense, lazy, useMemo } from 'react';
 import { NavLink, Navigate, useParams } from 'react-router-dom';
-import { Building, Building2, CircleDollarSign, Cog, DatabaseBackup, FileUp, Gift, History, Plug, ShieldCheck, BellRing, Users } from 'lucide-react';
+import { Building, Building2, CircleDollarSign, Cog, DatabaseBackup, FileUp, Gift, History, LockKeyhole, Plug, ShieldCheck, BellRing, Users } from 'lucide-react';
 import { PageHeader, PageLoader, SkeletonRows, ErrorState } from '../../components/ui';
 import { usePermission, useDocumentTitle } from '../../hooks';
 import { cn } from '../../utils/cn';
@@ -18,6 +18,7 @@ const IntegrationSettings = lazy(() => import('./IntegrationSettings').then((m) 
 const LoyaltySettings = lazy(() => import('./LoyaltySettings').then((m) => ({ default: m.LoyaltySettings })));
 const BackupSettings = lazy(() => import('./BackupSettings').then((m) => ({ default: m.BackupSettings })));
 const ImportSettings = lazy(() => import('./ImportSettings').then((m) => ({ default: m.ImportSettings })));
+const SecuritySettings = lazy(() => import('./SecuritySettings').then((m) => ({ default: m.SecuritySettings })));
 
 /** Sections that edit a settings group need the admin settings payload. */
 const SECTIONS = [
@@ -27,6 +28,7 @@ const SECTIONS = [
   { slug: 'system', label: 'System', icon: Cog, permission: 'settings.manage', group: 'system', component: SystemSettings },
   { slug: 'notifications', label: 'Notifications', icon: BellRing, permission: 'settings.manage', group: 'notifications', component: NotificationSettings },
   { slug: 'integrations', label: 'Integrations', icon: Plug, permission: 'settings.manage', group: 'integrations', component: IntegrationSettings },
+  { slug: 'security', label: 'Security', icon: LockKeyhole, permission: 'settings.manage', group: 'security', component: SecuritySettings },
   { slug: 'users', label: 'Users', icon: Users, permission: 'users.manage', component: UsersSettings },
   { slug: 'roles', label: 'Roles & permissions', icon: ShieldCheck, permission: 'roles.manage', component: RolesSettings },
   { slug: 'branches', label: 'Branches', icon: Building2, permission: 'branches.manage', component: BranchesSettings },

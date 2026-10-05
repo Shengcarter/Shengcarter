@@ -5,6 +5,7 @@ import { Camera } from 'lucide-react';
 import { Avatar, Card, Detail, PageHeader, Tabs } from '../components/ui';
 import { ChangePasswordForm } from '../features/auth/ChangePasswordForm';
 import { MyDetailsForm } from '../features/auth/MyDetailsForm';
+import { TwoStepCard } from '../features/auth/TwoStep';
 import { useAuthStore } from '../store/authStore';
 import { http } from '../api/client';
 import { reloadSession } from '../features/auth/api';
@@ -43,6 +44,7 @@ export default function ProfilePage() {
         tabs={[
           { value: 'profile', label: 'Profile' },
           { value: 'password', label: 'Password' },
+          { value: 'two-step', label: 'Two-step sign-in' },
         ]}
       />
       {tab === 'profile' ? (
@@ -77,6 +79,8 @@ export default function ProfilePage() {
           </div>
           <p className="mt-6 text-xs text-muted">To change your email or role, ask an administrator.</p>
         </Card>
+      ) : tab === 'two-step' ? (
+        <TwoStepCard />
       ) : (
         <Card className="p-6">
           <h2 className="mb-1 font-semibold">Change password</h2>

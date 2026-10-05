@@ -14,6 +14,8 @@ const auditService = require('../services/auditService');
 const messaging = require('../services/messaging');
 const { localDateRange } = require('../utils/time');
 const backupService = require('../services/backupService');
+const twoFactorService = require('../services/twoFactorService');
+const privilegeGuard = require('../services/privilegeGuard');
 
 // ---- Users ------------------------------------------------------------------
 const users = {
@@ -36,6 +38,12 @@ const users = {
   async unlock(req, res) {
     await userService.unlock(req.params.id, req.ctx);
     sendSuccess(res, null, 'Account unlocked');
+  },
+  /** For someone who lost their phone and recovery codes: turns two-step sign-in off and signs them out. */
+  async resetTwoFactor(req, res) {
+    await privilegeGuard.assertCanManageUser(req.ctx, await userService.getById(req.params.id));
+    await twoFactorService.resetForUser(req.params.id, req.ctx);
+    sendSuccess(res, await userService.getById(req.params.id), 'Two-step sign-in reset. They can set it up again after signing in.');
   },
   async updateMe(req, res) {
     sendSuccess(res, await userService.updateMe(req.user.id, req.body, req.ctx), 'Your details have been saved');

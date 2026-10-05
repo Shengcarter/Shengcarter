@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
 const config = require('../src/config');
@@ -74,5 +76,45 @@ describe('backups', () => {
     const again = await signIn();
     expect((await again.get('/customers?limit=1')).status).toBe(200);
     await again.delete(`/backups/${id}`);
+  });
+
+  test('with an encryption key, backups are encrypted, copied to a second place, and restored only if untouched', async () => {
+    const admin = await signIn();
+    const copyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zola-backup-copy-'));
+    const original = { ...config.backup };
+    Object.assign(config.backup, { encryptionKey: 'test-backup-key-0123456789-abcdefghij', copyDir });
+    try {
+      const { id, filename } = (await admin.post('/backups', {})).body.data;
+      expect(filename).toMatch(/\.sql\.gz\.enc$/);
+      const full = path.join(config.paths.backups, filename);
+      const bytes = fs.readFileSync(full);
+      expect(bytes.subarray(0, 8).toString()).toBe('ZOLAENC1');
+      expect(() => zlib.gunzipSync(bytes)).toThrow();
+      expect(bytes.includes(Buffer.from('CREATE TABLE'))).toBe(false);
+      // The second copy is identical.
+      expect(fs.readFileSync(path.join(copyDir, filename)).equals(bytes)).toBe(true);
+
+      // A changed byte is detected before anything is run.
+      const tampered = path.join(os.tmpdir(), `tampered-${filename}`);
+      const altered = Buffer.from(bytes);
+      altered[Math.floor(altered.length / 2)] ^= 0xff;
+      fs.writeFileSync(tampered, altered);
+      const marker = uniquePhone();
+      const kept = await admin.post('/customers', { fullName: 'Kept After Tampered Restore', phone: marker });
+      await expect(backupService.restoreFile(tampered)).rejects.toThrow(/cannot be decrypted/);
+      expect(await db.queryOne('SELECT id FROM customers WHERE phone = ?', [kept.body.data.phone])).toBeTruthy();
+
+      // The wrong key is refused too; the right one restores.
+      config.backup.encryptionKey = 'a-different-key-that-is-long-enough-000';
+      await expect(backupService.restoreFile(full)).rejects.toThrow(/cannot be decrypted/);
+      config.backup.encryptionKey = 'test-backup-key-0123456789-abcdefghij';
+      await backupService.restoreFile(full);
+      expect(await db.queryOne('SELECT id FROM customers WHERE phone = ?', [kept.body.data.phone])).toBeFalsy();
+      fs.rmSync(tampered, { force: true });
+      await (await signIn()).delete(`/backups/${id}`);
+    } finally {
+      Object.assign(config.backup, original);
+      fs.rmSync(copyDir, { recursive: true, force: true });
+    }
   });
 });

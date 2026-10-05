@@ -56,6 +56,8 @@ const envSchema = z.object({
   SERVE_FRONTEND: bool(true),
   TRUST_PROXY: str('false'),
   COOKIE_SECURE: bool(false),
+  // Redirect plain-HTTP requests to HTTPS (set when the site is served over HTTPS).
+  FORCE_HTTPS: bool(false),
 
   DATABASE_HOST: str('127.0.0.1'),
   DATABASE_PORT: int(3306),
@@ -97,7 +99,16 @@ const envSchema = z.object({
 
   UPLOAD_DIR: str('storage/uploads'),
   BACKUP_DIR: str('storage/backups'),
+  // Encrypt backup files (AES-256-GCM) with this passphrase: at least 32 characters.
+  BACKUP_ENCRYPTION_KEY: z.string().refine((v) => v === '' || v.length >= 32, 'BACKUP_ENCRYPTION_KEY must be at least 32 characters').optional().default(''),
+  // A second place every backup is copied to (USB drive, NAS or cloud-synced folder).
+  BACKUP_COPY_DIR: str(''),
   MAX_UPLOAD_MB: int(5),
+  // Optional virus scanning of uploads with ClamAV (clamd). Empty host = off.
+  CLAMAV_HOST: str(''),
+  CLAMAV_PORT: int(3310),
+  CLAMAV_TIMEOUT_MS: int(15000),
+  MALWARE_SCAN_REQUIRED: bool(false),
   LOG_LEVEL: str('info'),
   LOG_FILE: str('logs/app.log'),
   LOG_MAX_MB: int(20),
@@ -162,6 +173,7 @@ const config = Object.freeze({
     maxLoginAttempts: env.LOGIN_MAX_ATTEMPTS,
     lockMinutes: env.LOGIN_LOCK_MINUTES,
     cookieSecure: env.COOKIE_SECURE,
+    forceHttps: env.FORCE_HTTPS,
     refreshCookieName: 'zola_rt',
   },
   encryptionKey: env.APP_ENCRYPTION_KEY || env.JWT_SECRET,
@@ -193,8 +205,20 @@ const config = Object.freeze({
       model: env.AI_MODEL,
     },
   },
+  // Read at backup time (not frozen) so tests can switch them.
+  backup: {
+    encryptionKey: env.BACKUP_ENCRYPTION_KEY,
+    copyDir: env.BACKUP_COPY_DIR ? resolveFromBackend(env.BACKUP_COPY_DIR) : '',
+  },
   uploads: {
     maxBytes: env.MAX_UPLOAD_MB * 1024 * 1024,
+    // Read at upload time (not frozen) so tests can point it at a stand-in scanner.
+    scanner: {
+      host: env.CLAMAV_HOST,
+      port: env.CLAMAV_PORT,
+      timeoutMs: env.CLAMAV_TIMEOUT_MS,
+      required: env.MALWARE_SCAN_REQUIRED,
+    },
   },
   logLevel: env.LOG_LEVEL,
   logRotation: {

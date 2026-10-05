@@ -13,6 +13,7 @@ const logger = require('./config/logger');
 const routes = require('./routes');
 const { apiLimiter } = require('./middleware/rateLimiters');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
+const { PRIVATE_FOLDERS } = require('./middleware/upload');
 
 /**
  * Express application for ZOLA STYLISH MANAGEMENT SYSTEM.
@@ -25,6 +26,17 @@ function createApp() {
   app.set('trust proxy', config.trustProxy);
   app.disable('x-powered-by');
 
+  // HTTPS only (FORCE_HTTPS): pages are redirected, API calls over plain HTTP refused.
+  // The health check stays reachable for local monitoring.
+  if (config.auth.forceHttps) {
+    app.use((req, res, next) => {
+      if (req.secure || req.path === '/api/health') return next();
+      if (req.method === 'GET' || req.method === 'HEAD') return res.redirect(301, `https://${req.get('host')}${req.originalUrl}`);
+      return res.status(403).json({ success: false, message: 'Use HTTPS to connect to this server.', errors: [], code: 'HTTPS_REQUIRED' });
+    });
+  }
+  const httpsOnly = config.auth.cookieSecure || config.auth.forceHttps;
+
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -35,15 +47,23 @@ function createApp() {
           'style-src': ["'self'", "'unsafe-inline'"],
           'font-src': ["'self'", 'data:'],
           'connect-src': ["'self'"],
+          'object-src': ["'none'"],
+          'frame-ancestors': ["'self'"],
           // Allow plain-HTTP LAN installs (no HTTPS certificate on the salon network).
-          'upgrade-insecure-requests': config.auth.cookieSecure ? [] : null,
+          'upgrade-insecure-requests': httpsOnly ? [] : null,
         },
       },
       crossOriginEmbedderPolicy: false,
-      // HSTS only makes sense (and is only safe) when served over HTTPS.
-      strictTransportSecurity: config.auth.cookieSecure,
+      referrerPolicy: { policy: 'no-referrer' },
+      // HSTS only makes sense (and is only safe) when served over HTTPS: one year.
+      strictTransportSecurity: httpsOnly ? { maxAge: 31536000, includeSubDomains: false } : false,
     }),
   );
+  // Browser features: the camera only for this site (QR check-in), everything else off.
+  app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), display-capture=()');
+    next();
+  });
 
   app.use(
     cors({
@@ -83,8 +103,12 @@ function createApp() {
     );
   }
 
-  // Uploaded profile photos, logos and expense receipts. File names are random
-  // and unguessable; nosniff stops browsers from executing anything uploaded.
+  // Expense receipts are private: only GET /api/expenses/:id/attachment serves them.
+  for (const folder of PRIVATE_FOLDERS) {
+    app.use(`/uploads/${folder}`, (_req, res) => res.status(404).json({ success: false, message: 'Not found', errors: [] }));
+  }
+  // Uploaded profile photos and logos. File names are random and unguessable;
+  // nosniff stops browsers from executing anything uploaded.
   app.use(
     '/uploads',
     express.static(config.paths.uploads, {

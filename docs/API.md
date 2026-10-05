@@ -45,6 +45,8 @@ Errors use the same envelope with `success: false`:
 
 Other auth endpoints: `GET /auth/me`, `POST /auth/change-password`, `POST /auth/forgot-password`, `POST /auth/reset-password`.
 
+**Two-step sign-in.** When it is on for the account, `POST /auth/login` returns `{ twoFactorRequired: true, challenge }` (valid 5 minutes) and no session or cookie; `POST /auth/login/two-factor` `{ challenge, code }` (6-digit app code or a recovery code `XXXXX-XXXXX`) then signs in. Wrong codes count as failed sign-ins. For the signed-in user: `GET /auth/two-factor` (status), `POST /auth/two-factor/setup` `{ password }` → `{ secret, uri, qrCode }`, `POST /auth/two-factor/confirm` `{ code }` → `{ recoveryCodes }` (shown once), `POST /auth/two-factor/disable` `{ password, code }`, `POST /auth/two-factor/recovery-codes` `{ password, code }`. When the salon requires it (`security.two_factor_required`: `none` | `admins` | `all`) and it is not set up, every other endpoint answers `403` `TWO_FACTOR_SETUP_REQUIRED`.
+
 **Branches.** Users work in their assigned branch. Users with `branches.manage` may send `X-Branch-Id: <id>` to work in another branch.
 
 **Rate limits.** 300 requests/minute per client for the API, stricter limits for login and password reset, and 20/minute per user for heavy work (report exports, AI refresh, backups).
@@ -252,7 +254,8 @@ Adjustment types: `stock_in`, `stock_out`, `adjustment` (counted quantity), `dam
 | Method | Path | Permission |
 | --- | --- | --- |
 | GET / POST / PATCH / DELETE | `/expenses[/:id]` | read: `expenses.view`; write: `expenses.manage` |
-| POST / DELETE | `/expenses/:id/attachment` (multipart `attachment`: image or PDF) | `expenses.manage` |
+| POST / DELETE | `/expenses/:id/attachment` (multipart `attachment`: image or PDF; scanned for viruses when ClamAV is configured) | `expenses.manage` |
+| GET | `/expenses/:id/attachment` — the receipt file (receipts are not served at their `/uploads` address) | `expenses.view` |
 | GET / POST / PATCH / DELETE | `/expenses/categories[/:id]` | read: `expenses.view`; write: `expenses.manage` |
 
 ### Loyalty, messages and notifications
@@ -275,7 +278,7 @@ Adjustment types: `stock_in`, `stock_out`, `adjustment` (counted quantity), `dam
 | Method | Path | Permission |
 | --- | --- | --- |
 | GET / POST / PATCH | `/users[/:id]` | `users.manage` |
-| POST | `/users/:id/reset-password`, `/users/:id/unlock` | `users.manage` |
+| POST | `/users/:id/reset-password`, `/users/:id/unlock`, `/users/:id/reset-two-factor` | `users.manage` — only the Super Admin may change a Super Admin, and no one can give a role with permissions they do not hold |
 | PATCH | `/users/me` — own `fullName` and `phone` (the dashboard greets people by this name) | signed in |
 | POST | `/users/me/avatar` | signed in |
 | GET / POST / PATCH / DELETE | `/roles[/:id]`, GET `/roles/permissions` | `roles.manage` |
@@ -284,7 +287,8 @@ Adjustment types: `stock_in`, `stock_out`, `adjustment` (counted quantity), `dam
 | GET / PUT | `/settings`, `/settings/:group` | `settings.manage` |
 | POST / DELETE | `/settings/business/logo` | `settings.manage` |
 | GET | `/activity-logs` | `audit.view` |
-| GET / POST | `/backups` | `backups.manage` |
+| GET / POST | `/backups` — the list also says whether files are encrypted and copied (`protection`) | `backups.manage` |
+| GET | `/settings/security-check` — the security checklist of this installation (no secret values) | `settings.manage` |
 | PUT | `/backups/settings` `{ auto_enabled, cron, retention_count }` | `backups.manage` |
 | GET | `/backups/:id/download` | `backups.manage` |
 | DELETE | `/backups/:id` | `backups.manage` |

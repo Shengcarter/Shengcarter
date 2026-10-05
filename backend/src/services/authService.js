@@ -14,6 +14,7 @@ const branchService = require('./branchService');
 const settings = require('./settingsService');
 const messaging = require('./messaging');
 const audit = require('./auditService');
+const twoFactor = require('./twoFactorService');
 
 // Used to keep response time constant when the email does not exist,
 // so attackers cannot discover which accounts exist by timing logins.
@@ -81,6 +82,7 @@ async function buildSession(userId, branchId = null) {
     : [...permissionSet].sort();
 
   const canSwitchBranch = isSuperAdmin || permissionSet.has('branches.manage');
+  const twoFactorRequired = twoFactor.isRequiredFor({ isSuperAdmin, permissions: permissionSet });
   const allBranches = await branchService.list({ includeInactive: false });
   const branches = canSwitchBranch ? allBranches : allBranches.filter((b) => b.id === user.branchId);
   const defaultBranch = await branchService.getDefaultBranch();
@@ -97,6 +99,9 @@ async function buildSession(userId, branchId = null) {
       employeeId: user.employeeId,
       mustChangePassword: user.mustChangePassword,
       isSuperAdmin,
+      twoFactorEnabled: Boolean(user.twoFactorEnabled),
+      // The salon requires two-step sign-in for this account and it is not set up yet.
+      twoFactorSetupRequired: twoFactorRequired && !user.twoFactorEnabled,
     },
     permissions,
     canSwitchBranch,
@@ -106,6 +111,76 @@ async function buildSession(userId, branchId = null) {
   };
 }
 
+/**
+ * A failed sign-in step (wrong password or wrong code): counted, and the
+ * account locks for LOGIN_LOCK_MINUTES after LOGIN_MAX_ATTEMPTS.
+ */
+async function registerFailure(account, ctx, what) {
+  const attempts = account.failed_login_attempts + 1;
+  const lock = attempts >= config.auth.maxLoginAttempts;
+  await db.query(
+    `UPDATE users SET failed_login_attempts = ?, locked_until = ${lock ? 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE)' : 'NULL'} WHERE id = ?`,
+    lock ? [0, config.auth.lockMinutes, account.id] : [attempts, account.id],
+  );
+  await audit.record(ctx, {
+    action: lock ? 'auth.account_locked' : what === 'code' ? 'auth.two_factor_failed' : 'auth.login_failed',
+    entityType: 'user',
+    entityId: account.id,
+    description: lock
+      ? `Account locked for ${config.auth.lockMinutes} minutes after repeated failed sign-ins`
+      : what === 'code' ? 'Wrong two-step sign-in code' : 'Incorrect password',
+  });
+  if (lock) {
+    throw ApiError.locked(`Too many failed attempts. Your account is locked for ${config.auth.lockMinutes} minutes.`, { code: 'ACCOUNT_LOCKED' });
+  }
+}
+
+function assertNotLocked(account) {
+  if (account.locked_until && new Date(account.locked_until) > new Date()) {
+    const minutes = Math.ceil((new Date(account.locked_until) - Date.now()) / 60_000);
+    throw ApiError.locked(`Account temporarily locked after too many failed attempts. Try again in ${minutes} minute(s).`, { code: 'ACCOUNT_LOCKED' });
+  }
+}
+
+/** The short-lived proof that the password was right, exchanged for a session with the code. */
+function issueChallenge(account, remember) {
+  return jwt.sign(
+    { sub: account.id, type: 'two_factor', remember: Boolean(remember) },
+    config.auth.jwtSecret,
+    { algorithm: 'HS256', expiresIn: `${twoFactor.CHALLENGE_MINUTES}m`, jwtid: crypto.randomUUID() },
+  );
+}
+
+/** Start the session once every step has passed. */
+async function completeLogin(account, { remember, meta, previousToken, method }) {
+  const ctx = { userId: account.id, ip: meta.ip, userAgent: meta.userAgent };
+  const refresh = await db.withTransaction(async (conn) => {
+    await db.query(
+      'UPDATE users SET failed_login_attempts = 0, locked_until = NULL, last_login_at = UTC_TIMESTAMP(), last_login_ip = ? WHERE id = ?',
+      [meta.ip || null, account.id],
+      conn,
+    );
+    // A session this browser already had ends: signing in always starts a new
+    // one with new tokens (no session fixation).
+    if (previousToken) {
+      const previous = await db.queryOne('SELECT family_id FROM refresh_tokens WHERE token_hash = ?', [sha256(previousToken)], conn);
+      if (previous) await endSession(previous.family_id, 'logout', conn);
+    }
+    await audit.record(ctx, {
+      action: 'auth.login', entityType: 'user', entityId: account.id, description: `${account.full_name} logged in`,
+      metadata: { twoStep: method === 'password' ? false : method },
+    }, conn);
+    return createRefreshToken(account.id, { remember, ip: meta.ip, userAgent: meta.userAgent }, conn);
+  });
+
+  const session = await buildSession(account.id);
+  return { accessToken: issueAccessToken(session.user, refresh.familyId), refresh, session };
+}
+
+/**
+ * Step 1: email and password. With two-step sign-in on, no session starts
+ * yet: a challenge (valid 5 minutes) is returned for the code.
+ */
 async function login({ email, password, remember }, meta, previousToken = null) {
   const account = await userModel.findAuthByEmail(email);
 
@@ -120,52 +195,46 @@ async function login({ email, password, remember }, meta, previousToken = null) 
   }
 
   const ctx = { userId: account.id, ip: meta.ip, userAgent: meta.userAgent };
-
-  if (account.locked_until && new Date(account.locked_until) > new Date()) {
-    const minutes = Math.ceil((new Date(account.locked_until) - Date.now()) / 60_000);
-    throw ApiError.locked(`Account temporarily locked after too many failed attempts. Try again in ${minutes} minute(s).`, { code: 'ACCOUNT_LOCKED' });
-  }
+  assertNotLocked(account);
 
   const valid = await bcrypt.compare(password, account.password_hash);
   if (!valid) {
-    const attempts = account.failed_login_attempts + 1;
-    const lock = attempts >= config.auth.maxLoginAttempts;
-    await db.query(
-      `UPDATE users SET failed_login_attempts = ?, locked_until = ${lock ? 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE)' : 'NULL'} WHERE id = ?`,
-      lock ? [0, config.auth.lockMinutes, account.id] : [attempts, account.id],
-    );
-    await audit.record(ctx, {
-      action: lock ? 'auth.account_locked' : 'auth.login_failed',
-      entityType: 'user',
-      entityId: account.id,
-      description: lock ? `Account locked for ${config.auth.lockMinutes} minutes after repeated failed logins` : 'Incorrect password',
-    });
-    if (lock) {
-      throw ApiError.locked(`Too many failed attempts. Your account is locked for ${config.auth.lockMinutes} minutes.`, { code: 'ACCOUNT_LOCKED' });
-    }
+    await registerFailure(account, ctx, 'password');
     throw ApiError.unauthorized('Invalid email or password', { code: 'INVALID_CREDENTIALS' });
   }
 
   if (!account.is_active) throw ApiError.forbidden('Your account has been deactivated. Contact your administrator.', { code: 'ACCOUNT_INACTIVE' });
 
-  const refresh = await db.withTransaction(async (conn) => {
-    await db.query(
-      'UPDATE users SET failed_login_attempts = 0, locked_until = NULL, last_login_at = UTC_TIMESTAMP(), last_login_ip = ? WHERE id = ?',
-      [meta.ip || null, account.id],
-      conn,
-    );
-    // A session this browser already had ends: signing in always starts a new
-    // one with new tokens (no session fixation).
-    if (previousToken) {
-      const previous = await db.queryOne('SELECT family_id FROM refresh_tokens WHERE token_hash = ?', [sha256(previousToken)], conn);
-      if (previous) await endSession(previous.family_id, 'logout', conn);
-    }
-    await audit.record(ctx, { action: 'auth.login', entityType: 'user', entityId: account.id, description: `${account.full_name} logged in` }, conn);
-    return createRefreshToken(account.id, { remember, ip: meta.ip, userAgent: meta.userAgent }, conn);
-  });
+  if (account.totp_enabled_at) {
+    return { twoFactor: { challenge: issueChallenge(account, remember), expiresInMinutes: twoFactor.CHALLENGE_MINUTES } };
+  }
+  return completeLogin(account, { remember, meta, previousToken, method: 'password' });
+}
 
-  const session = await buildSession(account.id);
-  return { accessToken: issueAccessToken(session.user, refresh.familyId), refresh, session };
+/** Step 2: the code from the authenticator app, or a recovery code. */
+async function loginSecondStep({ challenge, code }, meta, previousToken = null) {
+  let payload;
+  try {
+    payload = jwt.verify(challenge, config.auth.jwtSecret, { algorithms: ['HS256'] });
+  } catch {
+    throw ApiError.unauthorized('Signing in took too long. Enter your password again.', { code: 'CHALLENGE_EXPIRED' });
+  }
+  if (payload.type !== 'two_factor') throw ApiError.unauthorized('Signing in took too long. Enter your password again.', { code: 'CHALLENGE_EXPIRED' });
+
+  const account = await userModel.findAuthById(payload.sub);
+  if (!account || !account.is_active) throw ApiError.unauthorized('Account is not active', { code: 'ACCOUNT_INACTIVE' });
+  assertNotLocked(account);
+  const ctx = { userId: account.id, ip: meta.ip, userAgent: meta.userAgent };
+
+  const method = await db.withTransaction((conn) => twoFactor.verifySignIn(account.id, code, conn));
+  if (!method) {
+    await registerFailure(account, ctx, 'code');
+    throw ApiError.unauthorized('That code is not right. Use the newest code from your authenticator app, or a recovery code.', { code: 'INVALID_TWO_FACTOR_CODE' });
+  }
+  if (method === 'recovery') {
+    await audit.record(ctx, { action: 'auth.recovery_code_used', entityType: 'user', entityId: account.id, description: 'Signed in with a recovery code' });
+  }
+  return completeLogin(account, { remember: payload.remember, meta, previousToken, method });
 }
 
 /**
@@ -348,6 +417,7 @@ module.exports = {
   issueAccessToken,
   buildSession,
   login,
+  loginSecondStep,
   refresh,
   logout,
   changePassword,

@@ -3,6 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const crypto = require('crypto');
+const { pipeline } = require('stream/promises');
+const { PassThrough, Transform, Writable } = require('stream');
 const readline = require('readline');
 const cron = require('node-cron');
 const mysql = require('mysql2/promise');
@@ -24,9 +27,100 @@ const audit = require('./auditService');
  * cron expression and retention count in Settings → Backups.
  *
  * Restore with `npm run restore -- <file>` (see scripts/restore.js).
+ *
+ * With BACKUP_ENCRYPTION_KEY set, files are encrypted (.sql.gz.enc) with
+ * AES-256-GCM from Node's crypto library, the key derived from the passphrase
+ * with scrypt and a random salt per file. A restore checks the whole file is
+ * authentic before running any of it. With BACKUP_COPY_DIR set, every backup
+ * is also copied there (a USB drive, NAS or cloud-synced folder), so a disk
+ * failure or theft of the server does not take the backups with it.
  */
 
-const FILE_PATTERN = /^zola-backup-\d{8}-\d{6}(-[a-z]+)?\.sql\.gz$/;
+const FILE_PATTERN = /^zola-backup-\d{8}-\d{6}(-[a-z]+)?\.sql\.gz(\.enc)?$/;
+// Encrypted file: MAGIC | salt (16) | iv (12) | ciphertext | auth tag (16).
+const MAGIC = Buffer.from('ZOLAENC1');
+const HEADER = MAGIC.length + 16 + 12;
+const TAG = 16;
+
+function encryptionKey() {
+  return config.backup.encryptionKey || '';
+}
+
+function deriveKey(passphrase, salt) {
+  return crypto.scryptSync(passphrase, salt, 32, { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+}
+
+/** A stream that encrypts and writes the header first and the tag last. */
+function encryptStream(passphrase) {
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', deriveKey(passphrase, salt), iv);
+  let headerSent = false;
+  return new Transform({
+    transform(chunk, _enc, done) {
+      if (!headerSent) {
+        this.push(Buffer.concat([MAGIC, salt, iv]));
+        headerSent = true;
+      }
+      done(null, cipher.update(chunk));
+    },
+    flush(done) {
+      if (!headerSent) this.push(Buffer.concat([MAGIC, salt, iv]));
+      this.push(cipher.final());
+      done(null, cipher.getAuthTag());
+    },
+  });
+}
+
+/** Is this file an encrypted backup? */
+function isEncrypted(file) {
+  const fd = fs.openSync(file, 'r');
+  const head = Buffer.alloc(MAGIC.length);
+  fs.readSync(fd, head, 0, MAGIC.length, 0);
+  fs.closeSync(fd);
+  return head.equals(MAGIC);
+}
+
+/** The decrypted (still gzipped) content of an encrypted backup, as a stream. */
+function decryptStream(file, passphrase) {
+  const size = fs.statSync(file).size;
+  if (size < HEADER + TAG) throw new Error('The backup file is damaged (too short).');
+  const fd = fs.openSync(file, 'r');
+  const header = Buffer.alloc(HEADER);
+  const tag = Buffer.alloc(TAG);
+  fs.readSync(fd, header, 0, HEADER, 0);
+  fs.readSync(fd, tag, 0, TAG, size - TAG);
+  fs.closeSync(fd);
+  const salt = header.subarray(MAGIC.length, MAGIC.length + 16);
+  const iv = header.subarray(MAGIC.length + 16);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', deriveKey(passphrase, salt), iv);
+  decipher.setAuthTag(tag);
+  return fs.createReadStream(file, { start: HEADER, end: size - TAG - 1 }).pipe(decipher);
+}
+
+/**
+ * Check an encrypted backup can be decrypted and has not been altered, by
+ * reading it to the end (the authentication tag is only checked at the end).
+ */
+async function verifyEncrypted(file, passphrase) {
+  try {
+    await pipeline(decryptStream(file, passphrase), new Writable({ write: (_c, _e, done) => done() }));
+  } catch (error) {
+    throw new Error(`The backup cannot be decrypted: the encryption key is wrong or the file was changed or damaged (${error.message}).`);
+  }
+}
+
+/** Copy a finished backup to BACKUP_COPY_DIR and keep the same number of scheduled copies there. */
+async function copyOffServer(full, filename) {
+  const dir = config.backup.copyDir;
+  if (!dir) return null;
+  fs.mkdirSync(dir, { recursive: true });
+  await fs.promises.copyFile(full, path.join(dir, filename));
+  const keep = Number(settings.get('backup.retention_count')) || 14;
+  const scheduled = fs.readdirSync(dir).filter((f) => FILE_PATTERN.test(f) && f.includes('-auto.')).sort().reverse();
+  for (const old of scheduled.slice(keep)) fs.rmSync(path.join(dir, old), { force: true });
+  return dir;
+}
 const BATCH = 500;
 let scheduledTask = null;
 let running = false;
@@ -117,7 +211,8 @@ async function writeDump(conn, out) {
 async function createBackup({ type = 'manual', ctx = null } = {}) {
   if (running) throw ApiError.conflict('A backup is already running. Please wait for it to finish.');
   running = true;
-  const filename = `zola-backup-${timestamp()}${type === 'scheduled' ? '-auto' : ''}.sql.gz`;
+  const passphrase = encryptionKey();
+  const filename = `zola-backup-${timestamp()}${type === 'scheduled' ? '-auto' : ''}.sql.gz${passphrase ? '.enc' : ''}`;
   const full = filePath(filename);
   const record = await db.query("INSERT INTO backups (filename, type, status, created_by) VALUES (?, ?, 'running', ?)", [filename, type, ctx?.userId || null]);
   const id = record.insertId;
@@ -127,20 +222,23 @@ async function createBackup({ type = 'manual', ctx = null } = {}) {
     conn = await dumpConnection();
     const gzip = zlib.createGzip({ level: 6 });
     const file = fs.createWriteStream(full, { mode: 0o600 });
-    const finished = new Promise((resolve, reject) => {
-      file.on('finish', resolve);
-      file.on('error', reject);
-      gzip.on('error', reject);
-    });
-    gzip.pipe(file);
+    const written = pipeline(gzip, ...(passphrase ? [encryptStream(passphrase)] : []), file);
     const stats = await writeDump(conn, gzip);
     gzip.end();
-    await finished;
+    await written;
     const size = fs.statSync(full).size;
     await db.query("UPDATE backups SET status = 'completed', size_bytes = ?, completed_at = UTC_TIMESTAMP() WHERE id = ?", [size, id]);
-    logger.info({ filename, size, ...stats, ms: Date.now() - started }, 'Backup completed');
-    if (ctx) await audit.record(ctx, { action: 'backup.created', entityType: 'backup', entityId: id, description: `Created backup ${filename}` });
+    logger.info({ filename, size, encrypted: Boolean(passphrase), ...stats, ms: Date.now() - started }, 'Backup completed');
+    if (ctx) await audit.record(ctx, { action: 'backup.created', entityType: 'backup', entityId: id, description: `Created backup ${filename}`, metadata: { encrypted: Boolean(passphrase) } });
     await applyRetention();
+    // The copy kept away from this server. A failed copy does not undo the backup, but is reported.
+    try {
+      const copiedTo = await copyOffServer(full, filename);
+      if (copiedTo) logger.info({ filename, copiedTo }, 'Backup copied');
+    } catch (error) {
+      logger.error({ err: error, filename }, 'Copying the backup to BACKUP_COPY_DIR failed');
+      await audit.record(ctx || {}, { action: 'backup.copy_failed', entityType: 'backup', entityId: id, description: `Copying ${filename} to the second location failed: ${error.message}` });
+    }
     return getById(id);
   } catch (error) {
     fs.rmSync(full, { force: true });
@@ -224,6 +322,16 @@ function schedule() {
  * Statements are executed one by one; each ends at a line that ends with ';'.
  */
 async function restoreFile(file, { onProgress } = {}) {
+  // An encrypted backup is checked in full before any of it is run.
+  let source;
+  if (isEncrypted(file)) {
+    const passphrase = encryptionKey();
+    if (!passphrase) throw new Error('This backup is encrypted. Set BACKUP_ENCRYPTION_KEY in .env to the key it was made with.');
+    await verifyEncrypted(file, passphrase);
+    source = decryptStream(file, passphrase).pipe(zlib.createGunzip());
+  } else {
+    source = fs.createReadStream(file).pipe(/\.gz$/.test(file) ? zlib.createGunzip() : new PassThrough());
+  }
   const conn = await mysql.createConnection({
     host: config.db.host,
     port: config.db.port,
@@ -233,7 +341,7 @@ async function restoreFile(file, { onProgress } = {}) {
     charset: 'utf8mb4',
     timezone: 'Z',
   });
-  const input = fs.createReadStream(file).pipe(file.endsWith('.gz') ? zlib.createGunzip() : new (require('stream').PassThrough)());
+  const input = source;
   const lines = readline.createInterface({ input, crlfDelay: Infinity });
   let statement = '';
   let count = 0;
@@ -264,4 +372,4 @@ async function restoreFile(file, { onProgress } = {}) {
   }
 }
 
-module.exports = { createBackup, list, getById, downloadInfo, remove, schedule, restoreFile, applyRetention };
+module.exports = { createBackup, list, getById, downloadInfo, remove, schedule, restoreFile, applyRetention, isEncrypted, verifyEncrypted };

@@ -9,7 +9,7 @@ import {
 import { ChartCard } from '../../components/charts/ChartCard';
 import { RankedBarChart } from '../../components/charts/Charts';
 import { CategoryManagerModal } from '../../components/CategoryManagerModal';
-import { http } from '../../api/client';
+import { http, openFile } from '../../api/client';
 import { formatDate, formatMoney, formatNumber, getFormatSettings, titleCase, todayISO } from '../../utils/format';
 import { usePermission, useDocumentTitle } from '../../hooks';
 import { PAYMENT_METHODS } from '../pos/api';
@@ -149,7 +149,19 @@ export default function ExpensesPage() {
             { key: 'description', header: 'Description', primary: true, render: (e) => <div><p className="font-medium">{e.description}</p><p className="text-xs text-muted">{e.vendor || e.recordedByName}</p></div> },
             { key: 'categoryName', header: 'Category', render: (e) => <Badge>{e.categoryName}</Badge> },
             { key: 'paymentMethod', header: 'Paid with', hideOnMobile: true, render: (e) => titleCase(e.paymentMethod) },
-            { key: 'attachment', header: 'Receipt', hideOnMobile: true, render: (e) => (e.attachment ? <a href={e.attachment} target="_blank" rel="noreferrer" onClick={(ev) => ev.stopPropagation()} className="inline-flex items-center gap-1 text-accent hover:underline"><Paperclip className="size-3.5" />View</a> : '—') },
+            { key: 'attachment', header: 'Receipt', hideOnMobile: true, render: (e) => (e.attachment ? (
+              // Receipts are private: fetched with the signed-in user's access, then shown.
+              <button
+                type="button"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  openFile(`/expenses/${e.id}/attachment`).catch((err) => toast.error(err.message));
+                }}
+                className="inline-flex items-center gap-1 text-accent hover:underline"
+              >
+                <Paperclip className="size-3.5" />View
+              </button>
+            ) : '—') },
             { key: 'amount', header: 'Amount', align: 'right', render: (e) => <span className="font-medium">{formatMoney(e.amount)}</span> },
             {
               key: 'actions',

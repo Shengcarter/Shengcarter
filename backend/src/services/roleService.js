@@ -5,6 +5,7 @@ const ApiError = require('../utils/ApiError');
 const { camelizeRow } = require('../utils/case');
 const permissionService = require('./permissionService');
 const audit = require('./auditService');
+const guard = require('./privilegeGuard');
 
 async function listPermissions() {
   const rows = await db.query('SELECT code, module, description FROM permissions ORDER BY module, code');
@@ -58,6 +59,7 @@ function slugify(name) {
 }
 
 async function create(data, ctx) {
+  guard.assertCanGrant(ctx, data.permissions);
   const slug = slugify(data.name);
   if (!slug) throw ApiError.validation([{ field: 'name', message: 'Enter a valid role name' }]);
   const exists = await db.queryOne('SELECT id FROM roles WHERE slug = ? OR name = ?', [slug, data.name]);
@@ -77,6 +79,8 @@ async function create(data, ctx) {
 }
 
 async function update(id, data, ctx) {
+  await guard.assertCanEditRole(ctx, id);
+  if (data.permissions) guard.assertCanGrant(ctx, data.permissions);
   const role = await getById(id);
   if (role.slug === 'super_admin' && data.permissions) {
     throw ApiError.badRequest('Super Admin always has every permission and cannot be changed');
@@ -107,6 +111,7 @@ async function update(id, data, ctx) {
 }
 
 async function remove(id, ctx) {
+  await guard.assertCanEditRole(ctx, id);
   const role = await getById(id);
   if (role.isSystem) throw ApiError.badRequest('Built-in roles cannot be deleted');
   if (role.userCount > 0) throw ApiError.conflict('This role is assigned to users. Move them to another role first.');

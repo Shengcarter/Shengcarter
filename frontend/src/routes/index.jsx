@@ -9,6 +9,7 @@ const LoginPage = lazy(() => import('../pages/auth/LoginPage'));
 const ForgotPasswordPage = lazy(() => import('../pages/auth/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('../pages/auth/ResetPasswordPage'));
 const ChangePasswordPage = lazy(() => import('../pages/auth/ChangePasswordPage'));
+const SetupTwoStepPage = lazy(() => import('../pages/auth/SetupTwoStepPage'));
 const NotFoundPage = lazy(() => import('../pages/NotFoundPage'));
 const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage'));
 const ProfilePage = lazy(() => import('../pages/ProfilePage'));
@@ -51,6 +52,14 @@ export const router = createBrowserRouter([
     element: (
       <RequireAuth allowPasswordChange>
         <ChangePasswordPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/setup-two-step',
+    element: (
+      <RequireAuth allowTwoFactorSetup>
+        <SetupTwoStepPage />
       </RequireAuth>
     ),
   },

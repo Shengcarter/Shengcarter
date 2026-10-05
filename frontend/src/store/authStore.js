@@ -76,6 +76,12 @@ export const useAuthStore = create((set, get) => ({
     const { user } = get();
     if (user && !user.mustChangePassword) set({ user: { ...user, mustChangePassword: true } });
   },
+
+  /** The salon now requires two-step sign-in for this account (e.g. the policy changed). */
+  requireTwoFactorSetup() {
+    const { user } = get();
+    if (user && !user.twoFactorSetupRequired) set({ user: { ...user, twoFactorSetupRequired: true } });
+  },
 }));
 
 /** Permission check usable outside React (e.g. in route definitions). */

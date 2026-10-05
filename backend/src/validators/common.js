@@ -30,10 +30,13 @@ const optionalEmail = z.preprocess(emptyToNull, email.nullable().optional());
 const phone = z.string().trim().regex(PHONE_PATTERN, 'Enter a valid phone number');
 const optionalPhone = z.preprocess(emptyToNull, phone.nullable().optional());
 
+// bcrypt only uses the first 72 bytes of a password, so longer ones are refused
+// rather than silently cut (two long passwords must never match by accident).
 const password = z
   .string()
   .min(8, 'Password must be at least 8 characters')
   .max(128, 'Password is too long')
+  .refine((v) => Buffer.byteLength(v, 'utf8') <= 72, 'Password is too long (at most 72 bytes; fewer characters if they are not plain letters)')
   .regex(/[A-Za-z]/, 'Password must contain at least one letter')
   .regex(/\d/, 'Password must contain at least one number');
 
