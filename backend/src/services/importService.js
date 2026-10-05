@@ -13,6 +13,8 @@ const { nextCode } = require('../utils/sequence');
 const { D, round, toNumber } = require('../utils/money');
 const { parseDateTime, todayLocal } = require('../utils/time');
 const { nextDocumentNumbers, insertLine } = require('./salesService');
+const serviceFinance = require('./serviceFinanceService');
+const { calculateServiceFinancials, deductsProducts, FinancialRuleError } = require('./financialRules');
 const { parseSpreadsheet, text, number, boolean, dateTime, timeOfDay } = require('./imports/spreadsheet');
 
 /**
@@ -27,9 +29,16 @@ const { parseSpreadsheet, text, number, boolean, dateTime, timeOfDay } = require
  *               already registered (or repeated in the file) are skipped.
  *   sales     — past sales recorded elsewhere. Rows sharing a receipt number
  *               form one sale. Imported sales record exactly the amounts in
- *               the file and count in reports and customer history, but do
- *               not change stock, earn loyalty points or create commission
- *               (that already happened outside the system).
+ *               the file and count in reports and customer history. Every
+ *               service goes through the same financial rules as a sale at
+ *               the till (operations, staff pool, salon profit); a row whose
+ *               service has no rule for its price is flagged and never
+ *               imported, so nothing is ever guessed or booked as profit.
+ *               Imports do not change stock or earn loyalty points; staff
+ *               shares are recorded as commission already paid (it was settled
+ *               outside the system), so they show in reports but never enter
+ *               a new payout. Product cost is estimated from the service's
+ *               usual products (its recipe) when the rule deducts it.
  */
 
 const COUNTRY_CODE = '255';
@@ -196,6 +205,54 @@ async function saleLookups(branchId) {
   };
 }
 
+/**
+ * Run every service row through its service's financial rule (the same
+ * engine as the till). Rows the rule cannot settle are flagged with the
+ * reason; the split is shown in the preview and recalculated when saving.
+ */
+async function checkServiceRules(checked, ctx, decimals) {
+  const serviceRows = checked.filter((r) => r.status === 'ready' && r.data.item?.type === 'service');
+  if (!serviceRows.length) return;
+  const ids = serviceRows.map((r) => r.data.item.serviceId);
+  const [rules, recipes] = await Promise.all([serviceFinance.rulesFor(ids), serviceFinance.recipesFor(ids, ctx.branchId)]);
+  const rates = serviceFinance.rules();
+  for (const row of serviceRows) {
+    const d = row.data;
+    const rule = rules.get(d.item.serviceId);
+    if (rule?.method === 'bands' && d.quantity !== 1) {
+      row.status = 'error';
+      row.messages = [`Financial rule: ${d.item.name} is priced per service — put each one on its own row (quantity 1).`];
+      continue;
+    }
+    // Product cost: the service's usual products, when its rule deducts them.
+    const recipe = recipes.get(d.item.serviceId) || [];
+    const estimate = rule && deductsProducts(rule.config)
+      ? round(recipe.reduce((sum, p) => sum.plus(p.cost), D(0)).times(d.quantity), decimals)
+      : D(0);
+    try {
+      const split = calculateServiceFinancials({
+        price: d.amount, productCost: estimate, staffCount: d.employeeIds.length, rule: rule?.config, generalRates: rates, serviceName: d.item.name, decimals,
+      });
+      if (split.staffPool.greaterThan(0) && !d.employeeIds.length) {
+        row.status = 'error';
+        row.messages = [`Fill in Staff: the staff share of ${toNumber(split.staffPool, decimals).toLocaleString('en')} goes to whoever performed ${d.item.name}.`];
+        continue;
+      }
+      d.productCost = toNumber(estimate, decimals);
+      row.display.split = {
+        method: split.method, band: split.band?.label || null, productCost: toNumber(split.productCost, decimals), operations: toNumber(split.operations, decimals),
+        staffPool: toNumber(split.staffPool, decimals), salonProfit: toNumber(split.salonProfit, decimals),
+      };
+      if (estimate.greaterThan(0)) row.messages = [...row.messages, `Product cost estimated from ${d.item.name}'s usual products: ${toNumber(estimate, decimals).toLocaleString('en')}.`];
+      if (split.needsReview) row.messages = [...row.messages, 'Zero or negative margin — it will be listed for review.'];
+    } catch (error) {
+      if (!(error instanceof FinancialRuleError) && !(error instanceof RangeError)) throw error;
+      row.status = 'error';
+      row.messages = [`Financial rule: ${error.message} Ask an administrator to set the rule under Services, then import this row again (sales already imported are skipped by receipt number).`];
+    }
+  }
+}
+
 async function analyseSales(rows, ctx) {
   const decimals = Number(settings.get('financial.currency_decimals') ?? 0);
   const today = todayLocal();
@@ -295,6 +352,8 @@ async function analyseSales(rows, ctx) {
     return row;
   });
 
+  await checkServiceRules(checked, ctx, decimals);
+
   // Rows with the same receipt number are one sale; they must agree on the sale details.
   const groups = new Map();
   for (const row of checked) {
@@ -367,6 +426,7 @@ async function analyseSales(rows, ctx) {
   return {
     rows: checked,
     summary: {
+      ruleProblems: checked.filter((r) => r.messages.some((m) => m.startsWith('Financial rule:'))).length,
       sales: saleKeys.size,
       total: toNumber(readyRows.reduce((sum, r) => sum.plus(r.data.amount), D(0))),
       newCustomers: newCustomers.size,
@@ -384,6 +444,8 @@ async function saveSales(analysis, ctx) {
     groups.get(groupKey).push(row);
   }
 
+  const rules = await serviceFinance.rulesFor(ready.filter((r) => r.data.item.type === 'service').map((r) => r.data.item.serviceId));
+  const rates = serviceFinance.rules();
   const result = await db.withTransaction(async (conn) => {
     // New customers first (once per phone number). Marketing consent is
     // unknown for them, so promotions stay off until someone switches them on.
@@ -404,7 +466,24 @@ async function saveSales(analysis, ctx) {
       const customerId = head.customerId || (head.phone ? createdCustomers.get(head.phone) : null) || null;
       const soldAt = parseDateTime(`${head.date}T${head.time}`);
       const saleTotal = group.reduce((sum, r) => sum.plus(r.data.amount), D(0));
-      const cost = group.reduce((sum, r) => sum.plus(D(r.data.item.cost).times(r.data.quantity)), D(0));
+      // Each service split with its own rule — the same engine as the till.
+      const lines = group.map((r) => {
+        const d = r.data;
+        const line = {
+          type: d.item.type, serviceId: d.item.serviceId, productId: d.item.productId, employeeId: d.employeeIds[0] || null,
+          staff: d.employeeIds.map((id) => ({ id })), description: d.item.name, quantity: d.quantity,
+          unitPrice: toNumber(D(d.amount).dividedBy(d.quantity).toDecimalPlaces(2)), unitCost: d.item.cost,
+          lineTotal: D(d.amount), netAmount: D(d.amount),
+        };
+        if (d.item.type === 'service') {
+          const estimate = D(d.productCost || 0);
+          line.usage = { lines: [], total: estimate, basis: estimate.greaterThan(0) ? 'recipe_estimate' : 'none' };
+          line.rule = rules.get(d.item.serviceId);
+          line.costing = serviceFinance.costLine({ line, tax: { mode: 'none', rate: 0 }, decimals, rates, field: `rows.${r.rowNumber}` });
+        }
+        return line;
+      });
+      const cost = lines.reduce((sum, l) => sum.plus(l.type === 'service' ? l.usage.total : D(l.unitCost).times(l.quantity)), D(0));
       const numbers = await nextDocumentNumbers(conn);
       const notes = [
         `Imported from ${analysis.fileName}${head.receipt ? ` (receipt ${head.receipt})` : ''}`,
@@ -415,32 +494,22 @@ async function saveSales(analysis, ctx) {
       const sale = await db.query(
         `INSERT INTO sales (invoice_number, receipt_number, branch_id, customer_id, cashier_id, subtotal, discount_type, discount_value, discount_amount,
                             loyalty_points_redeemed, loyalty_discount, tax_mode, tax_rate, tax_amount, total, amount_tendered, amount_paid, change_due,
-                            balance_due, cost_of_goods, status, payment_status, notes, sold_at, is_imported, import_reference, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'none', 0, 0, 0, 0, 'none', 0, 0, ?, ?, ?, 0, 0, ?, 'completed', 'paid', ?, ?, 1, ?, ?)`,
+                            balance_due, cost_of_goods, status, source, payment_status, notes, sold_at, original_sold_at, is_imported, import_reference, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'none', 0, 0, 0, 0, 'none', 0, 0, ?, ?, ?, 0, 0, ?, 'completed', 'import', 'paid', ?, ?, ?, 1, ?, UTC_TIMESTAMP())`,
         [numbers.invoiceNumber, numbers.receiptNumber, ctx.branchId, customerId, ctx.userId, toNumber(saleTotal), toNumber(saleTotal),
-          toNumber(saleTotal), toNumber(saleTotal), toNumber(cost), notes, soldAt, head.receipt, soldAt],
+          toNumber(saleTotal), toNumber(saleTotal), toNumber(cost), notes, soldAt, soldAt, head.receipt],
         conn,
       );
-      for (const r of group) {
-        const d = r.data;
-        // History only: no products used, money split or commission; the value
-        // is shared between the staff named.
+      // Stock is not touched (history); staff shares are commission already paid.
+      for (const line of lines) {
         await insertLine(conn, {
-          saleId: sale.insertId,
-          branchId: ctx.branchId,
-          at: soldAt,
-          decimals,
-          line: {
-            type: d.item.type, serviceId: d.item.serviceId, productId: d.item.productId, employeeId: d.employeeIds[0] || null,
-            staff: d.employeeIds.map((id) => ({ id })), description: d.item.name, quantity: d.quantity,
-            unitPrice: toNumber(D(d.amount).dividedBy(d.quantity).toDecimalPlaces(2)), unitCost: d.item.cost,
-            lineTotal: D(d.amount), netAmount: D(d.amount),
-          },
+          saleId: sale.insertId, branchId: ctx.branchId, at: soldAt, decimals, line,
+          invoiceNumber: numbers.invoiceNumber, userId: ctx.userId, commissionStatus: 'paid',
         });
       }
       await db.query(
-        "INSERT INTO payments (sale_id, branch_id, method, type, amount, reference, received_by, paid_at, created_at) VALUES (?, ?, ?, 'payment', ?, ?, ?, ?, ?)",
-        [sale.insertId, ctx.branchId, head.method, toNumber(saleTotal), head.receipt, ctx.userId, soldAt, soldAt],
+        "INSERT INTO payments (sale_id, branch_id, method, type, amount, reference, received_by, paid_at, created_at) VALUES (?, ?, ?, 'payment', ?, ?, ?, ?, UTC_TIMESTAMP())",
+        [sale.insertId, ctx.branchId, head.method, toNumber(saleTotal), head.receipt, ctx.userId, soldAt],
         conn,
       );
       if (customerId) {
@@ -618,7 +687,9 @@ async function template(type, ctx) {
       'Customer phone / name: a registered phone links the sale to that customer. A new phone with a name adds the customer. Leave both empty for a walk-in.',
       'Staff: who performed the service (drop-down). When several people did it together, write all their names, e.g. "Neema & Rehema" or "Neema, Rehema".',
       'Payment method: Cash, Mobile money (M-Pesa, Tigo Pesa, Airtel Money…), Card or Bank transfer. Default is Cash.',
-      'Imported sales appear in reports and customer history. They do not change stock, earn loyalty points or create staff commission, because that already happened outside the system.',
+      'Each service is split with its own financial rule (operations, staff share, salon profit), exactly like a sale at the till. A row whose service has no rule for its amount is flagged and not imported — ask an administrator to set the rule under Services first.',
+      'Services with fixed prices per rule (e.g. Steaming 10,000 / 15,000 / 20,000 / 25,000) need one row per service with exactly one of those amounts.',
+      'Imported sales appear in reports and customer history. They do not change stock or earn loyalty points. Staff shares are recorded as commission already paid (it was settled outside the system), so they never enter a new payout.',
     ], [
       ['Date', 'Time', 'Receipt no', 'Customer phone', 'Customer name', 'Type', 'Item', 'Staff', 'Quantity', 'Amount', 'Payment method', 'Notes'],
       ['02/09/2026', '10:30', 'R-1001', '0712345678', 'Asha Mrisho', 'Service', services[0]?.name || 'Haircut', staff[0]?.full_name || '', 1, Number(services[0]?.price || 15000), 'Mobile money', ''],

@@ -7,8 +7,10 @@ const { getPaging, getSort, paginate } = require('../utils/pagination');
 /**
  * Activity (audit) log. Pass the transaction connection when recording as part
  * of a business operation so the log entry commits or rolls back with it.
+ * `before` / `after` keep the previous and new values of what changed; the IP
+ * address and device (browser user agent) come from the request.
  */
-async function record(ctx, { action, entityType = null, entityId = null, description = null, metadata = null }, conn = null) {
+async function record(ctx, { action, entityType = null, entityId = null, description = null, metadata = null, before = null, after = null }, conn = null) {
   const params = [
     ctx?.userId || null,
     ctx?.branchId || null,
@@ -17,11 +19,13 @@ async function record(ctx, { action, entityType = null, entityId = null, descrip
     entityId,
     description ? String(description).slice(0, 500) : null,
     metadata ? JSON.stringify(metadata) : null,
+    before === null || before === undefined ? null : JSON.stringify(before),
+    after === null || after === undefined ? null : JSON.stringify(after),
     ctx?.ip || null,
     ctx?.userAgent ? String(ctx.userAgent).slice(0, 255) : null,
   ];
-  const sql = `INSERT INTO activity_logs (user_id, branch_id, action, entity_type, entity_id, description, metadata, ip_address, user_agent)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  const sql = `INSERT INTO activity_logs (user_id, branch_id, action, entity_type, entity_id, description, metadata, old_values, new_values, ip_address, user_agent)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
   if (conn) {
     await db.query(sql, params, conn);
     return;
@@ -67,7 +71,8 @@ async function list(filters) {
 
   return paginate({
     select: `a.id, a.action, a.entity_type AS entityType, a.entity_id AS entityId, a.description,
-             a.metadata, a.ip_address AS ipAddress, a.created_at AS createdAt,
+             a.metadata, a.old_values AS oldValues, a.new_values AS newValues, a.ip_address AS ipAddress,
+             a.user_agent AS device, a.created_at AS createdAt,
              u.id AS userId, u.full_name AS userName, b.name AS branchName`,
     from: `FROM activity_logs a
            LEFT JOIN users u ON u.id = a.user_id

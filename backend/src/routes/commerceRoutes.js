@@ -131,6 +131,8 @@ saleRouter.get(
 );
 saleRouter.post('/:id/payments', requirePermission('pos.create'), validate({ params: idParam, body: v.salePayment.extend({ amount: v.salePayment.shape.amount.refine((n) => n > 0, 'Amount must be greater than zero') }) }), sales.recordPayment);
 saleRouter.post('/:id/refund', requirePermission('pos.refund'), validate({ params: idParam, body: v.refund }), sales.refund);
+saleRouter.post('/:id/void', requirePermission('sales.void'), validate({ params: idParam, body: v.voidSale }), sales.voidSale);
+saleRouter.patch('/:id/date', requirePermission('sales.edit_history'), validate({ params: idParam, body: v.saleDateChange }), sales.changeDate);
 saleRouter.patch('/:id/items/:itemId/costing', requirePermission('sales.correct'), validate({ params: v.saleItemParams, body: v.serviceCorrection }), sales.correctService);
 saleRouter.post('/:id/items/:itemId/costing/review', requirePermission('sales.correct'), validate({ params: v.saleItemParams, body: v.serviceReview }), sales.reviewService);
 

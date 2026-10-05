@@ -192,9 +192,14 @@ describe('appointments and services done by several staff', () => {
       "SELECT si.id, si.employee_id, si.commission_amount FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.import_reference = 'TEAM-IMPORT-1'",
     );
     expect(item.employee_id).toBe(A);
-    expect(Number(item.commission_amount)).toBe(0);
+    // Split by the service's rule like a sale at the till; the staff pool is shared equally.
+    const finance = await db.queryOne('SELECT staff_pool, calculation_method FROM sale_item_finance WHERE sale_item_id = ?', [item.id]);
+    expect(Number(item.commission_amount)).toBe(Number(finance.staff_pool));
+    const half = Number(finance.staff_pool) / 2;
     const shares = await db.query('SELECT employee_id, revenue_share, commission_amount FROM sale_item_staff WHERE sale_item_id = ? ORDER BY sort_order', [item.id]);
-    expect(shares.map((s) => [s.employee_id, Number(s.revenue_share), Number(s.commission_amount)])).toEqual([[A, 6000, 0], [B, 6000, 0]]);
-    expect(await db.query('SELECT id FROM commissions WHERE sale_item_id = ?', [item.id])).toHaveLength(0);
+    expect(shares.map((s) => [s.employee_id, Number(s.revenue_share), Number(s.commission_amount)])).toEqual([[A, 6000, Math.ceil(half)], [B, 6000, Math.floor(half)]]);
+    // Settled outside the system: recorded as paid, never in a new payout.
+    const commissions = await db.query('SELECT employee_id, amount, status FROM commissions WHERE sale_item_id = ? ORDER BY employee_id', [item.id]);
+    expect(commissions.map((c) => c.status)).toEqual(['paid', 'paid']);
   });
 });

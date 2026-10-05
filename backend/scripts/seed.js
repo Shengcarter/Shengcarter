@@ -16,6 +16,7 @@ const bcrypt = require('bcryptjs');
 const config = require('../src/config');
 const { password: passwordRule } = require('../src/validators/common');
 const { connect, runSqlFile } = require('./lib/db');
+const { ensureServiceRules } = require('./lib/serviceRules');
 
 // Named after the demo staff they belong to, so the dashboard greets a person ("Good morning, Neema").
 const DEMO_USERS = [
@@ -69,6 +70,8 @@ async function seedDemo(conn) {
   }
   // Products used on services and the demo recipes (safe to run on every setup).
   await runSqlFile(conn, path.join(config.paths.database, 'demo-costing.sql'));
+  // Demo services get their financial rule before any demo sale is made.
+  await ensureServiceRules(conn);
 
   const demoPassword = process.env.DEMO_PASSWORD || '';
   checkPassword(demoPassword, 'DEMO_PASSWORD');
@@ -104,6 +107,8 @@ async function seed() {
   try {
     console.log('• Loading reference data (database/seed.sql)...');
     await runSqlFile(conn, path.join(config.paths.database, 'seed.sql'));
+    // Every service has an explicit financial rule; confirmed services are set up.
+    await ensureServiceRules(conn);
     await ensureSuperAdmin(conn);
     if (process.env.SEED_DEMO_DATA === 'true') await seedDemo(conn);
     console.log('✔ Seed complete.');

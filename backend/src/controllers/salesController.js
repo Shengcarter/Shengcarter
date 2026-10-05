@@ -7,7 +7,7 @@ const documentService = require('../services/documentService');
 
 async function create(req, res) {
   const sale = await salesService.createSale(req.body, req.ctx);
-  sendCreated(res, sale, `Sale completed — ${sale.invoiceNumber}`);
+  sendCreated(res, sale, sale.isBackdated ? `Sale recorded for a previous date — ${sale.invoiceNumber}` : `Sale completed — ${sale.invoiceNumber}`);
 }
 
 async function quote(req, res) {
@@ -29,6 +29,16 @@ async function recordPayment(req, res) {
 
 async function refund(req, res) {
   sendSuccess(res, await salesService.refundSale(req.params.id, req.body, req.ctx), 'Sale refunded');
+}
+
+/** Void (delete) a sale recorded by mistake: everything it did is undone, the record stays. */
+async function voidSale(req, res) {
+  sendSuccess(res, await salesService.voidSale(req.params.id, req.body, req.ctx), 'Sale voided');
+}
+
+/** Move a sale to its correct business date. */
+async function changeDate(req, res) {
+  sendSuccess(res, await salesService.changeSaleDate(req.params.id, req.body, req.ctx), 'Sale date changed');
 }
 
 /** Correct a completed service's products used, price or staff (recalculated, with an audit trail). */
@@ -63,4 +73,4 @@ async function payments(req, res) {
   sendPaginated(res, await salesService.listPayments(req.validQuery, req.ctx));
 }
 
-module.exports = { create, quote, list, get, recordPayment, refund, correctService, reviewService, document, appointmentCheckout, payments };
+module.exports = { create, quote, list, get, recordPayment, refund, voidSale, changeDate, correctService, reviewService, document, appointmentCheckout, payments };

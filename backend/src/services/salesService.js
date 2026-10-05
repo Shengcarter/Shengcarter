@@ -8,8 +8,11 @@ const { getPaging, getSort, paginate } = require('../utils/pagination');
 const { contains } = require('../utils/sql');
 const { D, toNumber } = require('../utils/money');
 const { nextSequenceValue, formatNumber } = require('../utils/sequence');
-const { localDateRange, localDateString } = require('../utils/time');
+const { DateTime } = require('luxon');
+const { localDateRange, localDateString, todayLocal, nowLocal, timezone } = require('../utils/time');
+const { hasPermission } = require('../middleware/auth');
 const { calculateTotals, applyPayments, splitEvenly } = require('./pricing');
+const { findBand, bandName } = require('./financialRules');
 const settings = require('./settingsService');
 const inventoryService = require('./inventoryService');
 const serviceFinance = require('./serviceFinanceService');
@@ -30,7 +33,11 @@ const audit = require('./auditService');
  * Any failure (e.g. not enough stock) rolls everything back, so a sale is
  * never partially saved. All amounts are computed here with decimal maths;
  * the browser only sends what was sold, the products used and how it was
- * paid. A service done by several people shares the staff pool equally.
+ * paid. Each service is split with its own financial rule (financialRules.js);
+ * a service done by several people shares the staff pool equally.
+ *
+ * A sale recorded for a previous date keeps that date as its business date
+ * (sold_at) while created_at is always when it was actually entered.
  */
 
 function moneySettings() {
@@ -87,6 +94,7 @@ async function resolveLines(conn, items, branchId, { lock = true, requireEmploye
   const employeeIds = [...new Set(items.flatMap(staffOf))];
 
   const services = serviceIds.length ? await db.query('SELECT id, name, price, max_price, is_active FROM services WHERE id IN (?)', [serviceIds], conn) : [];
+  const serviceRules = await serviceFinance.rulesFor(serviceIds, conn);
   // Products are locked (in id order) so the stock check and deduction see the same quantity.
   const productRows = productIds.length || usedIds.length
     ? await db.query(
@@ -129,6 +137,18 @@ async function resolveLines(conn, items, branchId, { lock = true, requireEmploye
           unitPrice = Number(item.price);
         }
       }
+      // The service's financial rule must cover the price charged.
+      const rule = serviceRules.get(service.id);
+      if (rule?.method === 'unconfigured') {
+        errors.push({ field: `items.${index}.serviceId`, message: `${service.name} has no financial rule yet. An administrator must set it up under Services before it can be sold.` });
+      } else if (rule?.method === 'bands') {
+        if ((item.quantity || 1) !== 1) {
+          errors.push({ field: `items.${index}.quantity`, message: `${service.name} is priced per service: add it once for each customer` });
+        }
+        if (!findBand(rule.config, unitPrice)) {
+          errors.push({ field: `items.${index}.price`, message: `${service.name} has no financial rule for ${unitPrice.toLocaleString('en')}. Configured prices: ${rule.config.bands.map(bandName).join(', ')}.` });
+        }
+      }
       // Products actually used, costed at the salon's recorded purchase cost.
       let usage = { lines: [], total: D(0) };
       if (item.consumption) {
@@ -138,7 +158,7 @@ async function resolveLines(conn, items, branchId, { lock = true, requireEmploye
       }
       return {
         type: 'service', serviceId: service.id, productId: null, employeeId: team[0]?.id || null, staff: team,
-        description: service.name, quantity: item.quantity || 1, unitPrice, unitCost: 0, usage,
+        description: service.name, quantity: item.quantity || 1, unitPrice, unitCost: 0, usage, rule,
         priceRange: service.max_price === null ? null : { min: Number(service.price), max: Number(service.max_price) },
       };
     }
@@ -173,10 +193,11 @@ async function resolveLines(conn, items, branchId, { lock = true, requireEmploye
  * split (`line.costing`): the products used are saved and taken out of stock,
  * the breakdown is saved, and the staff pool is shared equally between the
  * people who performed it as their commission. Product lines (who sold it)
- * and imported history have no split and earn no commission, but the value
- * is still shared so staff figures add up.
+ * have no split and earn no commission, but the value is still shared so staff
+ * figures add up. Imported history is split the same way; its commissions are
+ * recorded as already paid (`commissionStatus`).
  */
-async function insertLine(conn, { saleId, line, branchId, at, decimals, invoiceNumber = null, userId = null }) {
+async function insertLine(conn, { saleId, line, branchId, at, stockAt = at, decimals, invoiceNumber = null, userId = null, note = '', commissionStatus = 'earned' }) {
   const costing = line.costing || null;
   const revenueShares = splitEvenly(line.netAmount, Math.max(1, line.staff.length), decimals);
   const unitCost = costing ? toNumber(line.usage.total.dividedBy(line.quantity)) : line.unitCost;
@@ -189,13 +210,48 @@ async function insertLine(conn, { saleId, line, branchId, at, decimals, invoiceN
     conn,
   );
   const saleItemId = itemResult.insertId;
-  if (costing) await serviceFinance.recordLine(conn, { saleItemId, saleId, branchId, line, costing, at, invoiceNumber, userId });
-  await serviceFinance.writeStaff(conn, { saleItemId, saleId, branchId, staff: line.staff, revenueShares, costing, at });
+  if (costing) await serviceFinance.recordLine(conn, { saleItemId, saleId, branchId, line, costing, at, stockAt, invoiceNumber, userId, note });
+  await serviceFinance.writeStaff(conn, { saleItemId, saleId, branchId, staff: line.staff, revenueShares, costing, at, commissionStatus });
   return saleItemId;
+}
+
+/**
+ * Each service line's money split with its own rule (from what it was charged
+ * after discounts). Errors point at the line.
+ */
+function costServiceLines(lines, { tax, decimals, rates = serviceFinance.rules() }) {
+  lines.forEach((line, index) => {
+    if (line.type !== 'service') return;
+    line.costing = serviceFinance.costLine({ line, tax, decimals, rates, field: `items.${index}.price` });
+  });
+}
+
+/**
+ * When the sale happened (its business date) and how it was entered. A sale
+ * recorded for a previous date ("Record previous sale") needs the
+ * sales.backdate permission and a reason, and cannot be in the future.
+ */
+function saleTiming(data, ctx, options) {
+  if (options.soldAt) return { soldAt: options.soldAt, source: 'pos', backdated: false, reason: null }; // trusted callers (demo history)
+  if (!data.soldDate) return { soldAt: new Date(), source: 'pos', backdated: false, reason: null };
+  if (!hasPermission(ctx.user, 'sales.backdate')) {
+    throw ApiError.forbidden('Recording a sale for a previous date needs the "Record previous sales" permission');
+  }
+  const today = todayLocal();
+  if (data.soldDate > today) throw ApiError.validation([{ field: 'soldDate', message: 'A sale cannot be recorded for a future date' }]);
+  const time = data.soldTime || (data.soldDate === today ? nowLocal().toFormat('HH:mm') : '12:00');
+  const at = DateTime.fromISO(`${data.soldDate}T${time}`, { zone: timezone() });
+  if (!at.isValid) throw ApiError.validation([{ field: 'soldTime', message: 'Enter a valid date and time' }]);
+  if (at.toMillis() > Date.now()) throw ApiError.validation([{ field: 'soldTime', message: 'The time of the sale cannot be later than now' }]);
+  const reason = String(data.backdateReason || '').trim();
+  if (reason.length < 3) throw ApiError.validation([{ field: 'backdateReason', message: 'Say why this sale is being recorded late' }]);
+  return { soldAt: at.toJSDate(), source: 'backdated', backdated: true, reason };
 }
 
 async function createSale(data, ctx, options = {}) {
   const { decimals, tax, allowPartial } = moneySettings();
+  const timing = saleTiming(data, ctx, options);
+  const { soldAt } = timing;
 
   const result = await db.withTransaction(async (conn) => {
     // Customer and appointment
@@ -210,7 +266,7 @@ async function createSale(data, ctx, options = {}) {
       if (!appointment || appointment.branch_id !== ctx.branchId) throw ApiError.validation([{ field: 'appointmentId', message: 'Appointment not found' }]);
       if (['cancelled', 'no_show'].includes(appointment.status)) throw ApiError.badRequest(`Appointment ${appointment.code} is ${appointment.status.replace('_', ' ')}`);
       // Billing completes the appointment, so it must not be for a later day.
-      if (localDateString(appointment.start_time) > localDateString(options.soldAt || new Date())) {
+      if (localDateString(appointment.start_time) > localDateString(soldAt)) {
         throw ApiError.badRequest(`Appointment ${appointment.code} is scheduled for ${localDateString(appointment.start_time)}; bill it on the day of the visit`);
       }
       const billed = await db.queryOne("SELECT invoice_number FROM sales WHERE appointment_id = ? AND status = 'completed'", [appointment.id], conn);
@@ -246,49 +302,53 @@ async function createSale(data, ctx, options = {}) {
       if (!allowPartial) throw ApiError.validation([{ field: 'payments', message: 'Partial payments are disabled in Settings. Collect the full amount.' }]);
     }
 
-    // Each service's money split, from what it was charged after discounts.
-    const rates = serviceFinance.rules();
-    for (const line of totals.lines) {
-      if (line.type === 'service') line.costing = serviceFinance.costLine({ line, tax, decimals, rates });
-    }
+    // Each service's money split, with its own rule.
+    costServiceLines(totals.lines, { tax, decimals });
     // Cost of goods: retail products sold plus products used on services.
     const costOfGoods = lines.reduce((sum, l) => sum.plus(l.type === 'service' ? l.usage.total : D(l.unitCost).times(l.quantity)), D(0));
     const numbers = await nextDocumentNumbers(conn);
-    const soldAt = options.soldAt || new Date();
+    // created_at is when the sale was entered (demo history is entered "at the time").
+    const enteredAt = options.demo ? soldAt : null;
 
     // Sale header
     const saleResult = await db.query(
       `INSERT INTO sales (invoice_number, receipt_number, branch_id, customer_id, appointment_id, cashier_id, subtotal, discount_type, discount_value,
                           discount_amount, loyalty_points_redeemed, loyalty_discount, tax_mode, tax_rate, tax_amount, total, amount_tendered,
-                          amount_paid, change_due, balance_due, cost_of_goods, status, payment_status, notes, sold_at, is_demo, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)`,
+                          amount_paid, change_due, balance_due, cost_of_goods, status, source, is_backdated, backdate_reason, payment_status, notes,
+                          sold_at, original_sold_at, is_demo, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, UTC_TIMESTAMP()))`,
       [
         numbers.invoiceNumber, numbers.receiptNumber, ctx.branchId, customer?.id || null, appointment?.id || null, ctx.userId,
         toNumber(totals.subtotal), discount.type || 'none', Number(discount.value || 0), toNumber(totals.discountAmount),
         pointsToRedeem, toNumber(totals.loyaltyDiscount), tax.mode, tax.mode === 'none' ? 0 : tax.rate, toNumber(totals.taxAmount),
         toNumber(totals.total), toNumber(paid.tendered), toNumber(paid.amountPaid), toNumber(paid.change), toNumber(paid.balance),
-        toNumber(costOfGoods), paid.status, data.notes || null, soldAt, options.demo ? 1 : 0, soldAt,
+        toNumber(costOfGoods), timing.source, timing.backdated ? 1 : 0, timing.reason, paid.status, data.notes || null,
+        soldAt, soldAt, options.demo ? 1 : 0, enteredAt,
       ],
       conn,
     );
     const saleId = saleResult.insertId;
 
-    // Items + staff shares + commissions + stock
+    // Items + staff shares + commissions + stock. Stock leaves now: for a sale
+    // recorded late the movement is dated when it is entered (the stock count
+    // is today's), with the sale's date in the reason.
+    const stockAt = timing.backdated ? null : soldAt;
+    const late = timing.backdated ? ` (sale of ${localDateString(soldAt)}, recorded later)` : '';
     for (const line of totals.lines) {
-      await insertLine(conn, { saleId, line, branchId: ctx.branchId, at: soldAt, decimals, invoiceNumber: numbers.invoiceNumber, userId: ctx.userId });
+      await insertLine(conn, { saleId, line, branchId: ctx.branchId, at: soldAt, stockAt, decimals, invoiceNumber: numbers.invoiceNumber, userId: ctx.userId, note: late });
       if (line.type === 'product') {
         await inventoryService.changeStock(conn, {
           productId: line.productId, branchId: ctx.branchId, change: -line.quantity, type: 'sale', unitCost: line.unitCost,
-          referenceType: 'sale', referenceId: saleId, reason: `Sold on ${numbers.invoiceNumber}`, userId: ctx.userId, at: soldAt,
+          referenceType: 'sale', referenceId: saleId, reason: `Sold on ${numbers.invoiceNumber}${late}`, userId: ctx.userId, at: stockAt,
         });
       }
     }
 
-    // Payments
+    // Payments: received on the business date, entered now.
     for (const payment of paid.payments) {
       await db.query(
-        'INSERT INTO payments (sale_id, branch_id, method, type, amount, reference, received_by, paid_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [saleId, ctx.branchId, payment.method, 'payment', toNumber(payment.amount), payment.reference || null, ctx.userId, soldAt, soldAt],
+        'INSERT INTO payments (sale_id, branch_id, method, type, amount, reference, received_by, paid_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, UTC_TIMESTAMP()))',
+        [saleId, ctx.branchId, payment.method, 'payment', toNumber(payment.amount), payment.reference || null, ctx.userId, soldAt, enteredAt],
         conn,
       );
     }
@@ -310,9 +370,10 @@ async function createSale(data, ctx, options = {}) {
         });
         await db.query('UPDATE sales SET loyalty_points_earned = ? WHERE id = ?', [pointsEarned, saleId], conn);
       }
+      // A sale recorded late never moves the last visit backwards.
       await db.query(
-        'UPDATE customers SET total_spent = total_spent + ?, visit_count = visit_count + 1, last_visit_at = ? WHERE id = ?',
-        [toNumber(totals.total), soldAt, customer.id],
+        'UPDATE customers SET total_spent = total_spent + ?, visit_count = visit_count + 1, last_visit_at = GREATEST(COALESCE(last_visit_at, ?), ?) WHERE id = ?',
+        [toNumber(totals.total), soldAt, soldAt, customer.id],
         conn,
       );
     }
@@ -326,20 +387,44 @@ async function createSale(data, ctx, options = {}) {
     }
 
     if (options.silent) return { saleId, productIds: [] };
-    await audit.record(ctx, {
-      action: 'sale.completed', entityType: 'sale', entityId: saleId,
-      description: `Sale ${numbers.invoiceNumber} completed — total ${toNumber(totals.total)}${customer ? ` for ${customer.full_name}` : ''}`,
-      metadata: { total: toNumber(totals.total), paid: toNumber(paid.amountPaid), balance: toNumber(paid.balance), items: lines.length },
-    }, conn);
+    const summary = { total: toNumber(totals.total), paid: toNumber(paid.amountPaid), balance: toNumber(paid.balance), items: lines.length };
+    if (timing.backdated) {
+      await audit.record(ctx, {
+        action: 'sale.backdated', entityType: 'sale', entityId: saleId,
+        description: `Sale ${numbers.invoiceNumber} recorded for ${localDateString(soldAt)} — total ${summary.total}${customer ? ` for ${customer.full_name}` : ''}: ${timing.reason}`,
+        metadata: { ...summary, soldAt: soldAt.toISOString(), reason: timing.reason },
+      }, conn);
+    } else {
+      await audit.record(ctx, {
+        action: 'sale.completed', entityType: 'sale', entityId: saleId,
+        description: `Sale ${numbers.invoiceNumber} completed — total ${summary.total}${customer ? ` for ${customer.full_name}` : ''}`,
+        metadata: summary,
+      }, conn);
+    }
 
-    if (customer && paid.amountPaid.greaterThan(0)) {
+    // No thank-you message for a sale recorded after the visit.
+    if (customer && paid.amountPaid.greaterThan(0) && !timing.backdated) {
       await sendThankYou(customer, { amount: toNumber(paid.amountPaid), invoiceNumber: numbers.invoiceNumber, saleId }, ctx, conn);
     }
     const usedIds = lines.flatMap((l) => (l.usage?.lines || []).map((u) => u.productId));
-    return { saleId, productIds: [...new Set([...lines.filter((l) => l.productId).map((l) => l.productId), ...usedIds])] };
+    return {
+      saleId, invoiceNumber: numbers.invoiceNumber,
+      productIds: [...new Set([...lines.filter((l) => l.productId).map((l) => l.productId), ...usedIds])],
+    };
   });
 
   await inventoryService.alertLowStock(result.productIds, ctx.branchId).catch((err) => logger.error({ err }, 'Low stock alert failed'));
+  if (timing.backdated) {
+    await notificationService.notifyByPermission({
+      permission: 'sales.edit_history',
+      branchId: ctx.branchId,
+      type: 'sale.backdated',
+      category: 'payment',
+      title: 'Sale recorded for a previous date',
+      message: `${ctx.user?.fullName || 'A user'} recorded ${result.invoiceNumber} for ${localDateString(soldAt)}: ${timing.reason}`,
+      link: `/pos/sales/${result.saleId}`,
+    }).catch((err) => logger.error({ err }, 'Backdated sale notification failed'));
+  }
   return getById(result.saleId, ctx);
 }
 
@@ -373,8 +458,8 @@ async function quote(data, ctx) {
     : 0;
   // Service lines show the products used and a flag for a zero or negative margin;
   // people who see costs also get the full money split.
-  const rates = serviceFinance.rules();
   const showCosts = serviceFinance.canSeeCosts(ctx);
+  costServiceLines(totals.lines, { tax, decimals });
   return {
     lines: totals.lines.map((l) => {
       const out = {
@@ -382,8 +467,10 @@ async function quote(data, ctx) {
         quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: toNumber(l.lineTotal), netAmount: toNumber(l.netAmount),
       };
       if (l.type !== 'service') return out;
-      const costing = serviceFinance.costLine({ line: l, tax, decimals, rates });
+      const { costing } = l;
       out.priceRange = l.priceRange;
+      out.priceOptions = pointPrices(l.rule);
+      out.productsIncluded = l.rule ? l.rule.config.productsIncluded !== false : true;
       out.productsUsed = serviceFinance.describeUsage(l.usage).map((u) => (showCosts ? u : { productId: u.productId, name: u.name, unit: u.unit, quantity: u.quantity }));
       out.marginStatus = costing.marginStatus;
       if (showCosts) {
@@ -391,7 +478,8 @@ async function quote(data, ctx) {
         out.split = {
           price: m(costing.price), productCost: m(costing.productCost), amountAfterProducts: m(costing.afterProducts), operations: m(costing.operations),
           distributable: m(costing.distributable), staffPool: m(costing.staffPool), salonProfit: m(costing.salonProfit),
-          staffShares: costing.staffShares.map(m), rates: costing.rates,
+          staffShares: costing.staffShares.map(m), rates: costing.rates, consumptionCost: m(costing.consumptionCost),
+          method: costing.method, band: costing.band,
         };
       }
       return out;
@@ -417,17 +505,29 @@ async function quote(data, ctx) {
   };
 }
 
+/**
+ * The prices a service can be sold at when its rule only covers single prices
+ * (e.g. Steaming: 10,000 / 15,000 / 20,000 / 25,000), else null.
+ */
+function pointPrices(rule) {
+  if (rule?.method !== 'bands' || !rule.config.bands.length) return null;
+  if (!rule.config.bands.every((b) => b.min === b.max)) return null;
+  return rule.config.bands.map((b) => b.min).sort((a, b) => a - b);
+}
+
 // ---- Queries -------------------------------------------------------------------------------
 
 async function getById(id, ctx) {
   const sale = await db.queryOne(
     `SELECT s.*, c.full_name AS customer_name, c.phone AS customer_phone, c.code AS customer_code, c.loyalty_points AS customer_loyalty_points,
-            u.full_name AS cashier_name, rb.full_name AS refunded_by_name, b.name AS branch_name, b.address AS branch_address, b.phone AS branch_phone,
-            a.code AS appointment_code
+            u.full_name AS cashier_name, rb.full_name AS refunded_by_name, vb.full_name AS voided_by_name, ub.full_name AS updated_by_name,
+            b.name AS branch_name, b.address AS branch_address, b.phone AS branch_phone, a.code AS appointment_code
      FROM sales s
      LEFT JOIN customers c ON c.id = s.customer_id
      JOIN users u ON u.id = s.cashier_id
      LEFT JOIN users rb ON rb.id = s.refunded_by
+     LEFT JOIN users vb ON vb.id = s.voided_by
+     LEFT JOIN users ub ON ub.id = s.updated_by
      JOIN branches b ON b.id = s.branch_id
      LEFT JOIN appointments a ON a.id = s.appointment_id
      WHERE s.id = ?`,
@@ -484,6 +584,10 @@ async function list(filters, ctx) {
     where.push('s.status = ?');
     params.push(filters.status);
   }
+  if (filters.source) {
+    where.push('s.source = ?');
+    params.push(filters.source);
+  }
   if (filters.paymentStatus) {
     where.push('s.payment_status = ?');
     params.push(filters.paymentStatus);
@@ -507,7 +611,7 @@ async function list(filters, ctx) {
   const from = `FROM sales s LEFT JOIN customers c ON c.id = s.customer_id JOIN users u ON u.id = s.cashier_id WHERE ${where.join(' AND ')}`;
   const result = await paginate({
     select: `s.id, s.invoice_number, s.receipt_number, s.sold_at, s.subtotal, s.discount_amount, s.tax_amount, s.total, s.amount_paid,
-             s.balance_due, s.status, s.payment_status, s.is_imported, s.customer_id, c.full_name AS customer_name, u.full_name AS cashier_name,
+             s.balance_due, s.status, s.payment_status, s.is_imported, s.source, s.is_backdated, s.created_at, s.customer_id, c.full_name AS customer_name, u.full_name AS cashier_name,
              (SELECT GROUP_CONCAT(DISTINCT p.method) FROM payments p WHERE p.sale_id = s.id AND p.type = 'payment') AS methods,
              (SELECT COUNT(*) FROM sale_items si WHERE si.sale_id = s.id) AS item_count`,
     from,
@@ -617,7 +721,98 @@ async function recordPayment(saleId, data, ctx) {
   return { ...(await getById(saleId, ctx)), changeGiven: result.change };
 }
 
-// ---- Refunds -----------------------------------------------------------------------------------
+// ---- Refunds, voids and date changes ----------------------------------------------------------
+
+/**
+ * Undo a sale's effects, in the caller's transaction. A refund gives the money
+ * back today (refund payments) and restocks retail products; a void cancels a
+ * sale recorded by mistake as if it never happened: its payments are reversed
+ * on the day they were received, and the products used on its services go
+ * back into stock too. Both reverse commissions and loyalty points and
+ * correct the customer's figures. Imported history never moved stock, so it
+ * puts none back.
+ */
+async function reverseSale(conn, sale, ctx, { kind, at = null }) {
+  const label = kind === 'void' ? `void of ${sale.invoice_number}` : `refund of ${sale.invoice_number}`;
+  const stockType = kind === 'void' ? 'void' : 'refund';
+  if (!sale.is_imported) {
+    const items = await db.query("SELECT product_id, quantity, unit_cost FROM sale_items WHERE sale_id = ? AND item_type = 'product'", [sale.id], conn);
+    for (const item of items) {
+      await inventoryService.changeStock(conn, {
+        productId: item.product_id, branchId: sale.branch_id, change: item.quantity, type: stockType, unitCost: item.unit_cost,
+        referenceType: 'sale', referenceId: sale.id, reason: `${kind === 'void' ? 'Void' : 'Refund'} of ${sale.invoice_number}`, userId: ctx.userId, at,
+      });
+    }
+    if (kind === 'void') {
+      const used = await db.query(
+        `SELECT sip.product_id, sip.stock_quantity, sip.unit_cost, sip.product_name FROM sale_item_products sip JOIN sale_items si ON si.id = sip.sale_item_id
+         WHERE si.sale_id = ? AND sip.stock_quantity > 0 ORDER BY sip.product_id`,
+        [sale.id],
+        conn,
+      );
+      for (const u of used) {
+        await inventoryService.changeStock(conn, {
+          productId: u.product_id, branchId: sale.branch_id, change: Number(u.stock_quantity), type: 'void', unitCost: u.unit_cost,
+          referenceType: 'sale', referenceId: sale.id, reason: `Products used returned — void of ${sale.invoice_number}`, userId: ctx.userId,
+        });
+      }
+    }
+  }
+
+  const payouts = await db.query('SELECT DISTINCT salary_record_id AS id FROM commissions WHERE sale_id = ? AND salary_record_id IS NOT NULL', [sale.id], conn);
+  await db.query("UPDATE commissions SET status = 'reversed' WHERE sale_id = ?", [sale.id], conn);
+  await serviceFinance.refreshPayouts(conn, new Set(payouts.map((p) => p.id)));
+
+  if (kind === 'void') {
+    // Each payment is cancelled on the day it was received, so that day's takings exclude it.
+    const received = await db.query("SELECT method, amount, reference, paid_at FROM payments WHERE sale_id = ? AND type = 'payment' ORDER BY id", [sale.id], conn);
+    for (const row of received) {
+      await db.query(
+        `INSERT INTO payments (sale_id, branch_id, method, type, amount, reference, received_by, paid_at, created_at)
+         VALUES (?, ?, ?, 'void', ?, ?, ?, ?, UTC_TIMESTAMP())`,
+        [sale.id, sale.branch_id, row.method, -Number(row.amount), `Void ${sale.invoice_number}`, ctx.userId, row.paid_at],
+        conn,
+      );
+    }
+  } else {
+    // Money back by the same methods it was received with.
+    const received = await db.query('SELECT method, SUM(amount) AS amount FROM payments WHERE sale_id = ? GROUP BY method HAVING SUM(amount) > 0', [sale.id], conn);
+    for (const row of received) {
+      await db.query(
+        `INSERT INTO payments (sale_id, branch_id, method, type, amount, reference, received_by, paid_at, created_at)
+         VALUES (?, ?, ?, 'refund', ?, ?, ?, COALESCE(?, UTC_TIMESTAMP()), COALESCE(?, UTC_TIMESTAMP()))`,
+        [sale.id, sale.branch_id, row.method, -Number(row.amount), `Refund ${sale.invoice_number}`, ctx.userId, at, at],
+        conn,
+      );
+    }
+  }
+
+  if (sale.customer_id) {
+    const customer = await db.queryOne('SELECT loyalty_points FROM customers WHERE id = ? FOR UPDATE', [sale.customer_id], conn);
+    if (sale.loyalty_points_redeemed) {
+      await loyaltyService.applyChange(conn, {
+        customerId: sale.customer_id, points: sale.loyalty_points_redeemed, type: 'reverse', saleId: sale.id, userId: ctx.userId,
+        description: `Redeemed points returned — ${label}`, affectsLifetime: false, at,
+      });
+    }
+    if (sale.loyalty_points_earned) {
+      // If the customer already spent some of these points, remove what is left.
+      const available = customer.loyalty_points + (sale.loyalty_points_redeemed || 0);
+      const toRemove = Math.min(sale.loyalty_points_earned, available);
+      if (toRemove > 0) {
+        await loyaltyService.applyChange(conn, {
+          customerId: sale.customer_id, points: -toRemove, type: 'reverse', saleId: sale.id, userId: ctx.userId,
+          description: `Earned points removed — ${label}`, affectsLifetime: true, at,
+        });
+      }
+    }
+    await db.query(
+      'UPDATE customers SET total_spent = GREATEST(0, total_spent - ?), visit_count = GREATEST(0, CAST(visit_count AS SIGNED) - 1) WHERE id = ?',
+      [sale.total, sale.customer_id],
+      conn,
+    );
+  }
+}
 
 /**
  * Full refund, in one transaction: restock products, reverse commissions,
@@ -630,58 +825,12 @@ async function refundSale(saleId, { reason }, ctx, options = {}) {
     const sale = await db.queryOne('SELECT * FROM sales WHERE id = ? FOR UPDATE', [saleId], conn);
     if (!sale || sale.branch_id !== ctx.branchId) throw ApiError.notFound('Sale not found');
     if (sale.status === 'refunded') throw ApiError.conflict('This sale has already been refunded');
+    if (sale.status === 'voided') throw ApiError.conflict('This sale was voided');
 
-    // Imported sales never took stock out, so their refund puts none back.
-    const items = sale.is_imported ? [] : await db.query("SELECT product_id, quantity, unit_cost FROM sale_items WHERE sale_id = ? AND item_type = 'product'", [saleId], conn);
-    for (const item of items) {
-      await inventoryService.changeStock(conn, {
-        productId: item.product_id, branchId: sale.branch_id, change: item.quantity, type: 'refund', unitCost: item.unit_cost,
-        referenceType: 'sale', referenceId: saleId, reason: `Refund of ${sale.invoice_number}`, userId: ctx.userId, at,
-      });
-    }
-
-    await db.query("UPDATE commissions SET status = 'reversed' WHERE sale_id = ?", [saleId], conn);
-
-    // Money back by the same methods it was received with.
-    const received = await db.query("SELECT method, SUM(amount) AS amount FROM payments WHERE sale_id = ? GROUP BY method HAVING SUM(amount) > 0", [saleId], conn);
-    for (const row of received) {
-      await db.query(
-        `INSERT INTO payments (sale_id, branch_id, method, type, amount, reference, received_by, paid_at, created_at)
-         VALUES (?, ?, ?, 'refund', ?, ?, ?, COALESCE(?, UTC_TIMESTAMP()), COALESCE(?, UTC_TIMESTAMP()))`,
-        [saleId, sale.branch_id, row.method, -Number(row.amount), `Refund ${sale.invoice_number}`, ctx.userId, at, at],
-        conn,
-      );
-    }
-
-    if (sale.customer_id) {
-      const customer = await db.queryOne('SELECT loyalty_points FROM customers WHERE id = ? FOR UPDATE', [sale.customer_id], conn);
-      if (sale.loyalty_points_redeemed) {
-        await loyaltyService.applyChange(conn, {
-          customerId: sale.customer_id, points: sale.loyalty_points_redeemed, type: 'reverse', saleId, userId: ctx.userId,
-          description: `Redeemed points returned — refund of ${sale.invoice_number}`, affectsLifetime: false, at,
-        });
-      }
-      if (sale.loyalty_points_earned) {
-        // If the customer already spent some of these points, remove what is left.
-        const available = customer.loyalty_points + (sale.loyalty_points_redeemed || 0);
-        const toRemove = Math.min(sale.loyalty_points_earned, available);
-        if (toRemove > 0) {
-          await loyaltyService.applyChange(conn, {
-            customerId: sale.customer_id, points: -toRemove, type: 'reverse', saleId, userId: ctx.userId,
-            description: `Earned points removed — refund of ${sale.invoice_number}`, affectsLifetime: true, at,
-          });
-        }
-      }
-      await db.query(
-        'UPDATE customers SET total_spent = GREATEST(0, total_spent - ?), visit_count = GREATEST(0, CAST(visit_count AS SIGNED) - 1) WHERE id = ?',
-        [sale.total, sale.customer_id],
-        conn,
-      );
-    }
-
+    await reverseSale(conn, sale, ctx, { kind: 'refund', at });
     await db.query(
-      "UPDATE sales SET status = 'refunded', refund_reason = ?, refunded_at = COALESCE(?, UTC_TIMESTAMP()), refunded_by = ?, balance_due = 0 WHERE id = ?",
-      [reason, at, ctx.userId, saleId],
+      "UPDATE sales SET status = 'refunded', refund_reason = ?, refunded_at = COALESCE(?, UTC_TIMESTAMP()), refunded_by = ?, balance_due = 0, updated_by = ? WHERE id = ?",
+      [reason, at, ctx.userId, ctx.userId, saleId],
       conn,
     );
     if (options.silent) return;
@@ -689,6 +838,8 @@ async function refundSale(saleId, { reason }, ctx, options = {}) {
       action: 'sale.refunded', entityType: 'sale', entityId: saleId,
       description: `Refunded ${sale.invoice_number} (${sale.total}) — ${reason}`,
       metadata: { total: sale.total, amountPaid: sale.amount_paid },
+      before: { status: sale.status },
+      after: { status: 'refunded', reason },
     }, conn);
   });
 
@@ -701,6 +852,103 @@ async function refundSale(saleId, { reason }, ctx, options = {}) {
     title: 'Sale refunded',
     message: `${ctx.user?.fullName || 'A user'} refunded a sale: ${reason}`,
     link: `/pos/sales/${saleId}`,
+  });
+  return getById(saleId, ctx);
+}
+
+/** Commissions of a sale already paid out (or waiting in a payout) cannot move. */
+async function assertCommissionsOpen(conn, saleId, action) {
+  const row = await db.queryOne(
+    `SELECT e.full_name, c.status, r.status AS payout_status FROM commissions c JOIN employees e ON e.id = c.employee_id
+     LEFT JOIN salary_records r ON r.id = c.salary_record_id JOIN sales s ON s.id = c.sale_id
+     WHERE c.sale_id = ? AND c.status <> 'reversed' AND (c.status = 'paid' OR r.status = 'paid')
+       AND NOT (s.is_imported = 1 AND c.salary_record_id IS NULL) LIMIT 1`,
+    [saleId],
+    conn,
+  );
+  if (row) {
+    throw ApiError.conflict(`${row.full_name}'s commission for this sale was already paid out, so the sale cannot be ${action}. Settle it with a bonus or deduction on the next payout instead.`);
+  }
+}
+
+/**
+ * Void (delete) a sale recorded by mistake. Nothing is erased: the sale stays
+ * visible as "voided" with who, when and why, and everything it did is undone
+ * (see reverseSale). Refused once a commission from it has been paid out.
+ */
+async function voidSale(saleId, { reason }, ctx) {
+  await db.withTransaction(async (conn) => {
+    const sale = await db.queryOne('SELECT * FROM sales WHERE id = ? FOR UPDATE', [saleId], conn);
+    if (!sale || sale.branch_id !== ctx.branchId) throw ApiError.notFound('Sale not found');
+    if (sale.status === 'voided') throw ApiError.conflict('This sale has already been voided');
+    if (sale.status === 'refunded') throw ApiError.conflict('This sale was refunded, so it cannot be voided');
+    await assertCommissionsOpen(conn, saleId, 'voided');
+
+    await reverseSale(conn, sale, ctx, { kind: 'void' });
+    await db.query(
+      "UPDATE sales SET status = 'voided', void_reason = ?, voided_at = UTC_TIMESTAMP(), voided_by = ?, updated_by = ?, balance_due = 0 WHERE id = ?",
+      [reason, ctx.userId, ctx.userId, saleId],
+      conn,
+    );
+    await audit.record(ctx, {
+      action: 'sale.voided', entityType: 'sale', entityId: saleId,
+      description: `Voided ${sale.invoice_number} (${sale.total}) — ${reason}`,
+      metadata: { total: Number(sale.total), amountPaid: Number(sale.amount_paid), soldAt: sale.sold_at, source: sale.source },
+      before: { status: sale.status, total: Number(sale.total), amountPaid: Number(sale.amount_paid) },
+      after: { status: 'voided', reason },
+    }, conn);
+  });
+
+  await notificationService.notifyByPermission({
+    permission: 'users.manage',
+    branchId: ctx.branchId,
+    type: 'sale.voided',
+    category: 'payment',
+    title: 'Sale voided',
+    message: `${ctx.user?.fullName || 'A user'} voided a sale: ${reason}`,
+    link: `/pos/sales/${saleId}`,
+  }).catch((err) => logger.error({ err }, 'Void notification failed'));
+  return getById(saleId, ctx);
+}
+
+/**
+ * Move a sale to its correct business date (e.g. entered on the wrong day).
+ * The payments taken with it, its commissions and its service breakdown move
+ * with it; the date it was first recorded for and when it was entered are
+ * kept. Refused once a commission from it is in a payout.
+ */
+async function changeSaleDate(saleId, { soldDate, soldTime, reason }, ctx) {
+  await db.withTransaction(async (conn) => {
+    const sale = await db.queryOne('SELECT * FROM sales WHERE id = ? FOR UPDATE', [saleId], conn);
+    if (!sale || sale.branch_id !== ctx.branchId) throw ApiError.notFound('Sale not found');
+    if (sale.status !== 'completed') throw ApiError.badRequest(`A ${sale.status} sale cannot be moved to another date`);
+    const inPayout = await db.queryOne(
+      "SELECT e.full_name FROM commissions c JOIN employees e ON e.id = c.employee_id WHERE c.sale_id = ? AND c.status <> 'reversed' AND c.salary_record_id IS NOT NULL LIMIT 1",
+      [saleId],
+      conn,
+    );
+    if (inPayout) throw ApiError.conflict(`${inPayout.full_name}'s commission for this sale is already in a commission payout, so its date cannot change`);
+
+    const current = DateTime.fromJSDate(sale.sold_at).setZone(timezone());
+    const time = soldTime || current.toFormat('HH:mm');
+    const next = DateTime.fromISO(`${soldDate}T${time}`, { zone: timezone() });
+    if (!next.isValid) throw ApiError.validation([{ field: 'soldDate', message: 'Enter a valid date and time' }]);
+    if (soldDate > todayLocal() || next.toMillis() > Date.now()) throw ApiError.validation([{ field: 'soldDate', message: 'A sale cannot be moved to the future' }]);
+    if (next.toMillis() === current.toMillis()) throw ApiError.badRequest('The sale is already on that date and time');
+    const at = next.toJSDate();
+
+    await db.query('UPDATE sales SET sold_at = ?, updated_by = ? WHERE id = ?', [at, ctx.userId, saleId], conn);
+    // Payments taken with the sale move with it; later balance payments keep their own dates.
+    await db.query("UPDATE payments SET paid_at = ? WHERE sale_id = ? AND type = 'payment' AND paid_at = ?", [at, saleId, sale.sold_at], conn);
+    await db.query("UPDATE commissions SET earned_at = ? WHERE sale_id = ? AND status <> 'reversed'", [at, saleId], conn);
+    await db.query('UPDATE sale_item_finance SET performed_at = ? WHERE sale_id = ?', [at, saleId], conn);
+    await audit.record(ctx, {
+      action: 'sale.date_changed', entityType: 'sale', entityId: saleId,
+      description: `Moved ${sale.invoice_number} from ${localDateString(sale.sold_at)} to ${soldDate}: ${reason}`,
+      metadata: { reason, originalSoldAt: sale.original_sold_at },
+      before: { soldAt: sale.sold_at },
+      after: { soldAt: at },
+    }, conn);
   });
   return getById(saleId, ctx);
 }
@@ -731,4 +979,7 @@ async function appointmentCheckout(appointmentId, ctx) {
   };
 }
 
-module.exports = { createSale, quote, getById, list, listPayments, recordPayment, refundSale, appointmentCheckout, nextDocumentNumbers, insertLine };
+module.exports = {
+  createSale, quote, getById, list, listPayments, recordPayment, refundSale, voidSale, changeSaleDate, appointmentCheckout, nextDocumentNumbers, insertLine,
+  costServiceLines,
+};

@@ -4,6 +4,7 @@ const { Router } = require('express');
 const validate = require('../middleware/validate');
 const { requirePermission } = require('../middleware/auth');
 const catalog = require('../services/catalogService');
+const serviceRules = require('../services/serviceRuleService');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess, sendCreated } = require('../utils/response');
 const { z, idParam, id, requiredText, optionalText, positiveMoney, optionalId, emptyToUndefined } = require('../validators/common');
@@ -40,6 +41,35 @@ const serviceBody = z.object({
   recipe: recipe.optional(),
 });
 
+// A service's financial rule (see services/financialRules.js for the meaning).
+const rulePart = z.object({
+  type: z.enum(['fixed', 'percent', 'remainder', 'none']),
+  value: z.coerce.number().min(0, 'Enter 0 or more').max(1_000_000_000).optional(),
+});
+const ruleBand = z.object({
+  min: z.coerce.number().min(0).max(1_000_000_000),
+  max: z.coerce.number().min(0).max(1_000_000_000),
+  label: optionalText(60),
+  general: z.boolean().optional(),
+  operations: rulePart.optional(),
+  staff: rulePart.optional(),
+  profit: rulePart.optional(),
+});
+const financialRule = z.object({
+  method: z.enum(['general', 'bands', 'unconfigured']),
+  productCost: z.enum(['deduct', 'none']).optional().default('deduct'),
+  productsIncluded: z.boolean().optional().default(true),
+  staffSplit: z.enum(['equal']).optional().default('equal'),
+  bands: z.array(ruleBand).max(50, 'At most 50 price bands').optional().default([]),
+});
+const ruleBody = z.object({ rule: financialRule, notes: optionalText(255) });
+const rulePreview = z.object({
+  rule: financialRule,
+  price: z.coerce.number().min(0).max(1_000_000_000),
+  productCost: z.coerce.number().min(0).max(1_000_000_000).optional().default(0),
+  staffCount: z.coerce.number().int().min(1).max(20).optional().default(1),
+});
+
 const listQuery = z.object({
   search: z.string().trim().max(100).optional(),
   categoryId: optionalId,
@@ -72,6 +102,16 @@ const canRead = requirePermission('services.view', 'pos.create', 'appointments.c
 
 serviceRouter.get('/', canRead, validate({ query: listQuery }), async (req, res) => {
   sendSuccess(res, await catalog.listServices(req.validQuery, req.ctx));
+});
+// Financial rules: configured by people with services.rules; readable by them and by people who see financial reports.
+serviceRouter.post('/financial-rule/preview', requirePermission('services.rules'), validate({ body: rulePreview }), async (req, res) => {
+  sendSuccess(res, serviceRules.preview(req.body));
+});
+serviceRouter.get('/:id/financial-rule', requirePermission('services.rules', 'reports.financial'), validate({ params: idParam }), async (req, res) => {
+  sendSuccess(res, await serviceRules.getRule(req.params.id));
+});
+serviceRouter.put('/:id/financial-rule', requirePermission('services.rules'), validate({ params: idParam, body: ruleBody }), async (req, res) => {
+  sendSuccess(res, await serviceRules.setRule(req.params.id, req.body, req.ctx), 'Financial rule saved');
 });
 serviceRouter.get('/:id', canRead, validate({ params: idParam }), async (req, res) => {
   sendSuccess(res, await catalog.getService(req.params.id, req.ctx));
