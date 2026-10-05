@@ -36,10 +36,12 @@ Errors use the same envelope with `success: false`:
 
 ## Authentication
 
-1. `POST /auth/login` `{ email, password, remember? }` → `data.accessToken` (valid 15 minutes) plus an httpOnly refresh cookie (`zola_rt`, path `/api/auth`).
-2. Send `Authorization: Bearer <accessToken>` on every other request.
-3. `POST /auth/refresh` (cookie) → a new access token; the refresh token rotates on every use. Replaying an old refresh token signs out the whole session.
-4. `POST /auth/logout` revokes the session.
+1. `POST /auth/login` `{ email, password, remember? }` → `data.accessToken` (valid 15 minutes) plus an HttpOnly, `SameSite=Strict` refresh cookie (`zola_rt`, path `/api/auth`). Signing in starts a new session and ends the one the browser's cookie belonged to.
+2. Send `Authorization: Bearer <accessToken>` on every other request. The token names its session; every request checks the session is still open, so a signed-out or revoked session is refused at once (`401`, `code: SESSION_ENDED`), not when the token expires.
+3. `POST /auth/refresh` (cookie) → a new access token; the refresh token rotates on every use. Replaying an old refresh token signs out the whole session. A session ends `SESSION_MAX_HOURS` (24) after sign-in, or `REFRESH_TOKEN_DAYS` with "remember me", however often it is refreshed (`SESSION_EXPIRED`).
+4. `POST /auth/logout` ends the session of the cookie and of the bearer token sent with it.
+
+`/auth/login`, `/auth/refresh` and `/auth/logout` refuse requests whose `Origin` (or `Referer`) is another site (`403`, `CROSS_SITE_REQUEST`). Every API response is sent with `Cache-Control: no-store`.
 
 Other auth endpoints: `GET /auth/me`, `POST /auth/change-password`, `POST /auth/forgot-password`, `POST /auth/reset-password`.
 
@@ -51,7 +53,7 @@ Other auth endpoints: `GET /auth/me`, `POST /auth/change-password`, `POST /auth/
 
 Each endpoint requires one of the permissions listed. Roles are editable in Settings → Roles & permissions.
 
-`dashboard.view` · `customers.view|create|update|delete|import` · `appointments.view|view_own|create|update|cancel|complete|checkin|record_products` · `services.view|manage` · `employees.view|manage` · `attendance.view|manage|self` · `leave.manage` · `payroll.manage` · `pos.create` · `pos.refund` · `sales.view|import|correct` · `inventory.view|manage` · `suppliers.view|manage` · `purchases.view|manage` · `expenses.view|manage` · `loyalty.manage` · `reports.view` · `reports.financial` · `reports.export` · `insights.view` · `notifications.send` · `settings.manage` · `users.manage` · `roles.manage` · `branches.manage` · `audit.view` · `backups.manage`
+`dashboard.view` · `customers.view|create|update|delete|import` · `appointments.view|view_own|create|update|cancel|complete|checkin|record_products` · `services.view|manage|rules` · `employees.view|manage` · `attendance.view|manage|self` · `leave.manage` · `payroll.manage` · `pos.create` · `pos.refund` · `sales.view|import|correct|backdate|edit_history|void` · `inventory.view|manage` · `suppliers.view|manage` · `purchases.view|manage` · `expenses.view|manage` · `loyalty.manage` · `reports.view` · `reports.financial` · `reports.export` · `insights.view` · `notifications.send` · `settings.manage` · `users.manage` · `roles.manage` · `branches.manage` · `audit.view` · `backups.manage`
 
 ## Endpoints
 
@@ -116,7 +118,10 @@ An appointment can have up to 6 staff (`staff: [{ id, fullName, color }]` in res
 | Method | Path | Permission |
 | --- | --- | --- |
 | GET / POST / PATCH / DELETE | `/service-categories[/:id]` | read: `services.view`; write: `services.manage` |
-| GET / POST / PATCH / DELETE | `/services[/:id]` `{ …, price, maxPrice?, recipe?: [{ productId, quantity }] }` — `maxPrice` for a price range chosen at checkout; `recipe` = products normally used, in this branch | read: `services.view`; write: `services.manage` |
+| GET / POST / PATCH / DELETE | `/services[/:id]` `{ …, price, maxPrice?, recipe?: [{ productId, quantity }] }` — `maxPrice` for a price range chosen at checkout; `recipe` = products normally used, in this branch. Each service returns `financialRule` (method, version, `priceOptions` for services with set prices; band amounts only for people who see costs). A new service starts on the general formula | read: `services.view`; write: `services.manage` |
+| GET | `/services/:id/financial-rule` — the rule in force, its versions (with the number of sales made with each), warnings (e.g. prices no band covers) and the general percentages | `services.rules` or `reports.financial` |
+| PUT | `/services/:id/financial-rule` `{ rule, notes? }` — saves a new version (audited with the old and new rule) | `services.rules` |
+| POST | `/services/financial-rule/preview` `{ rule, price, productCost?, staffCount? }` — tries a rule without saving | `services.rules` |
 | GET | `/employees`, `/employees/options`, `/employees/:id` | `employees.view` (options also for booking) |
 | POST / PATCH / DELETE | `/employees[/:id]`, `/employees/:id/photo` | `employees.manage` |
 | PUT | `/employees/:id/schedule`, `/employees/:id/services` | `employees.manage` |
@@ -140,13 +145,15 @@ Staff are paid by commission only; employees have no salary field.
 | --- | --- | --- |
 | POST | `/sales/quote` | `pos.create` — prices a cart without saving |
 | POST | `/sales` | `pos.create` |
-| GET | `/sales` (`from`, `to`, `status`, `paymentStatus`, `method`, `search`) | `sales.view` |
+| GET | `/sales` (`from`, `to`, `status`: completed\|refunded\|voided, `source`: pos\|backdated\|import, `paymentStatus`, `method`, `search`) | `sales.view` |
 | GET | `/sales/:id` | `sales.view` or `pos.create` |
 | GET | `/sales/:id/document?format=a4\|thermal&download=1` | `sales.view` or `pos.create` (PDF) |
 | GET | `/sales/appointment/:id` | `pos.create` — cart for an appointment |
 | POST | `/sales/:id/payments` `{ method, amount, reference? }` | `pos.create` — settle a balance |
 | POST | `/sales/:id/refund` `{ reason }` | `pos.refund` |
-| PATCH | `/sales/:id/items/:itemId/costing` `{ price?, employeeIds?, consumption?: [{ productId, quantity, unitCost? }], reason }` — correct a completed service | `sales.correct` |
+| POST | `/sales/:id/void` `{ reason }` — cancel a sale recorded by mistake (see below) | `sales.void` |
+| PATCH | `/sales/:id/date` `{ soldDate, soldTime?, reason }` — move a sale to its correct business date | `sales.edit_history` |
+| PATCH | `/sales/:id/items/:itemId/costing` `{ price?, employeeIds?, consumption?: [{ productId, quantity, unitCost? }], reason }` — correct a completed service (a sale from a previous day also needs `sales.edit_history`) | `sales.correct` |
 | POST | `/sales/:id/items/:itemId/costing/review` `{ note }` — mark a zero or negative margin service as reviewed | `sales.correct` |
 | GET | `/payments` | `sales.view` |
 
@@ -175,21 +182,41 @@ Prices, discounts, tax (none by default: `financial.tax_mode` is `none`), loyalt
 
 A service line lists who performed it in `employeeIds` (1–6 people; `employeeId` is still accepted) and the products **actually used** in `consumption`, each in the product's usage unit (e.g. packs, or ml of a product stocked in bottles). For a service with a recipe, `consumption` is required (send `[]` when nothing was used); a service priced by range takes `price` between its price and `maxPrice`.
 
-For every service line the server works out, in this order and never otherwise:
+Every service line is split by **its service's financial rule** (one engine, `services/financialRules.js`, used by the till, quotes, corrections and imports):
 
-```
-price charged (after discounts)
-− product cost        (quantity used × the product's recorded purchase cost per unit)
-= amount after products
-− operations          (financial.operations_percentage, default 30 %)
-= distributable amount
-→ staff pool          (financial.staff_pool_percentage of it, default 50 %), shared equally between the staff
-→ salon profit        (the rest: financial.salon_profit_percentage, default 50 %)
-```
+- **General formula** (every service unless configured otherwise):
 
-Example: 50,000 with 2 packs × 5,000 and 100 ml × 20 → products 12,000, operations 11,400, staff 13,300, salon profit 13,300 (12,000 + 11,400 + 13,300 + 13,300 = 50,000). Amounts are rounded to the currency precision (whole shillings) and always add up to the price. When products cost as much as or more than the price, operations and staff get 0 (never a negative amount), a loss shows as negative salon profit, and the service is flagged `zero`/`negative` for review. The products used come out of stock (`service_use` in the ledger) in the same transaction, and the breakdown is saved with the percentages used, so later changes to prices, costs or rules never alter it.
+  ```
+  price charged (after discounts)
+  − product cost        (quantity used × the product's recorded purchase cost per unit)
+  = amount after products
+  − operations          (financial.operations_percentage, default 30 %)
+  = distributable amount
+  → staff pool          (financial.staff_pool_percentage of it, default 50 %), shared equally between the staff
+  → salon profit        (the rest: financial.salon_profit_percentage, default 50 %)
+  ```
 
-Sale details return `items[].staff: [{ id, fullName, revenueShare, commissionAmount }]`, `items[].productsUsed`, and — for `reports.financial` or `sales.correct` — `items[].costing` (the full breakdown, review status and correction history). `/sales/appointment/:id` returns the appointment's `employeeIds` and `usage` (products per service) for checkout. The quote returns each service's `productsUsed`, `marginStatus` and, for the same people, `split`.
+  Example: 50,000 with 2 packs × 5,000 and 100 ml × 20 → products 12,000, operations 11,400, staff 13,300, salon profit 13,300 (12,000 + 11,400 + 13,300 + 13,300 = 50,000).
+- **Price bands**: a rule per price or price range. Operations come first (a fixed amount or a percentage of the amount after products); staff and salon profit share what is left (fixed, percentage or "the rest"); a band can also say "use the general formula". Product cost is deducted first only when the rule says so (`productCost: deduct` and `productsIncluded`). Confirmed rules set up on install:
+
+  | Service | Price | Operations | Staff pool | Salon profit |
+  | --- | --- | --- | --- | --- |
+  | Kufumua (no product cost) | 2,000–5,000 | 1,000 | the rest | 0 |
+  | | 6,000–10,000 | 2,000 | the rest | 0 |
+  | | 11,000–20,000 | general formula with product cost 0 (20,000 → 6,000 / 7,000 / 7,000) | | |
+  | Steaming | 10,000 / 15,000 / 20,000 / 25,000 | 4,000 / 6,000 / 9,000 / 10,000 | 3,000 / 3,000 / 3,000 / 4,000 | 3,000 / 6,000 / 8,000 / 11,000 |
+  | Relaxer | 10,000 / 15,000 | 4,000 / 6,000 | 3,000 / 3,000 | 3,000 / 6,000 |
+  | Kubana Nyuele | — not configured: cannot be sold or imported until an administrator sets its rule | | | |
+
+- **Not configured**: refused with the reason.
+
+A price no band covers (e.g. Steaming at 12,000, or a discount that takes it to 9,000), a band whose parts do not add up, or a negative part is refused (`422`) — nothing is guessed and nothing is booked as profit. A service with a band rule is sold with quantity 1. Every split is checked to add up exactly (products + operations + staff + profit = price, staff shares = staff pool), and each line stores the rule version and a snapshot of the rule applied (`calculation_method`: general, band, band_general), so later rule changes never alter it; a correction recalculates with the rule the sale was made with (or the current rule when a new price is outside that rule's band). Amounts are rounded to the currency precision (whole shillings) and always add up to the price. When products cost as much as or more than the price, operations and staff get 0 (never a negative amount), a loss shows as negative salon profit, and the service is flagged `zero`/`negative` for review. The products used come out of stock (`service_use` in the ledger) in the same transaction, and the breakdown is saved with the percentages used, so later changes to prices, costs or rules never alter it.
+
+**Sales for a previous date.** Add `soldDate` (YYYY-MM-DD), optional `soldTime` (HH:MM, default 12:00) and `backdateReason` to the sale body; this needs `sales.backdate`. The date cannot be in the future. The sale keeps that business date in `soldAt` (payments, commission and reports use it) while `createdAt` is when it was entered; it is marked `source: backdated`, `isBackdated`, with `originalSoldAt` and the reason, audited as `sale.backdated`, and people with `sales.edit_history` are notified. Stock is taken out when it is entered, and no thank-you message is sent.
+
+**Void.** Cancels a sale recorded by mistake: payments are reversed on the day they were received (`type: void`), products sold *and* products used on its services go back into stock, commissions are reversed (pending payouts are recalculated) and loyalty points and customer figures are corrected. The sale stays visible as `voided` with who, when and why. Refused once a commission from it was paid out (imported sales excepted: their commission was settled outside the system). **Changing the date** moves the payments taken with the sale, its commissions and its service breakdown; refused once a commission is in a payout.
+
+Sale details return `source`, `isBackdated`, `backdateReason`, `originalSoldAt`, `createdAt`, `voidReason`, `voidedAt`, `voidedByName`, `updatedByName`, `items[].staff: [{ id, fullName, revenueShare, commissionAmount }]`, `items[].productsUsed`, and — for `reports.financial` or `sales.correct` — `items[].costing` (the full breakdown, review status and correction history). `/sales/appointment/:id` returns the appointment's `employeeIds` and `usage` (products per service) for checkout. The quote returns each service's `productsUsed`, `marginStatus`, `priceOptions` (services with set prices), `productsIncluded` and, for the same people, `split` (with `method`, `band` and `consumptionCost`).
 
 ### Imports (Excel / CSV)
 
@@ -202,7 +229,7 @@ Sale details return `items[].staff: [{ id, fullName, revenueShare, commissionAmo
 Files are `.xlsx` or `.csv` (comma, semicolon or tab separated), up to 5,000 rows and `MAX_UPLOAD_MB`; they are read in memory and never stored. Headers are matched loosely (`Phone`, `Phone number`, `Simu`); dates are read day first (`01/09/2026` is 1 September). The preview returns `{ fileName, columns: { mapped, ignored }, summary, rows: [{ rowNumber, status: ready|skip|error, messages, display }] }`. The import checks the file again and saves all rows in one transaction; if any row has a problem it is refused (422) unless `skipInvalid=true`.
 
 - **Customers**: *Full name* and *Phone* are required; phone numbers already registered (or repeated in the file) are skipped.
-- **Sales**: one row per item; rows with the same *Receipt* number form one sale. *Date* and *Item* (a service or product name, SKU or barcode) are required; a blank *Amount* uses the price list. Customers are matched by phone (new phone + name adds the customer); staff by name or code. Imported sales are marked `isImported`, recorded as paid in full with no tax, and do not change stock, commissions or loyalty points; receipts already imported are skipped. Refunding an imported sale does not return stock.
+- **Sales**: one row per item; rows with the same *Receipt* number form one sale. *Date* and *Item* (a service or product name, SKU or barcode) are required; a blank *Amount* uses the price list. Customers are matched by phone (new phone + name adds the customer); staff by name or code. Every service row goes through **the same financial engine as the till**: the preview shows its split (`display.split`), and a row whose service has no rule for its amount, is not configured, has a band rule with quantity above 1, or has a staff share but no staff is flagged (`Financial rule: …` / `Fill in Staff …`, counted in `summary.ruleProblems`) and never imported — set the rule and import it again. Product cost is estimated from the service's recipe when its rule deducts products (`productCostBasis: recipe_estimate`). Imported sales are marked `isImported` / `source: import`, recorded as paid in full with no tax, do not change stock or loyalty points, and their staff shares are saved as commission already paid (they show in reports, never in a new payout); receipts already imported are skipped. Refunding or voiding an imported sale does not return stock.
 
 ### Inventory, suppliers and purchases
 

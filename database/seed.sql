@@ -49,6 +49,7 @@ INSERT INTO permissions (code, module, description) VALUES
   ('appointments.record_products', 'appointments', 'Record the products used on appointments'),
   ('services.view',            'services',      'View services'),
   ('services.manage',          'services',      'Create and edit services and categories'),
+  ('services.rules',           'services',      'Configure service financial rules (operating cost, staff commission, salon profit)'),
   ('employees.view',           'employees',     'View employees'),
   ('employees.manage',         'employees',     'Create and edit employees, schedules and service assignments'),
   ('attendance.view',          'employees',     'View attendance'),
@@ -60,7 +61,10 @@ INSERT INTO permissions (code, module, description) VALUES
   ('pos.refund',               'pos',           'Refund sales'),
   ('sales.view',               'pos',           'View sales, invoices and payments'),
   ('sales.import',             'pos',           'Import past sales from Excel or CSV files'),
-  ('sales.correct',            'pos',           'Correct completed services (products used, price, staff) and review low-margin services'),
+  ('sales.correct',            'pos',           'Adjust financial transactions: correct completed services (products used, price, staff) and review low-margin services'),
+  ('sales.backdate',           'pos',           'Record sales that happened on a previous date'),
+  ('sales.edit_history',       'pos',           'Change the date of past sales and correct sales from previous days'),
+  ('sales.void',               'pos',           'Void (delete) sales recorded by mistake'),
   ('inventory.view',           'inventory',     'View products and stock'),
   ('inventory.manage',         'inventory',     'Manage products and adjust stock'),
   ('suppliers.view',           'suppliers',     'View suppliers'),
@@ -114,7 +118,7 @@ INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN (
   'dashboard.view',
   'customers.view', 'services.view', 'employees.view', 'attendance.view',
-  'pos.create', 'pos.refund', 'sales.view', 'sales.import',
+  'pos.create', 'pos.refund', 'sales.view', 'sales.import', 'sales.backdate',
   'expenses.view', 'expenses.manage', 'payroll.manage',
   'inventory.view', 'suppliers.view', 'purchases.view',
   'reports.view', 'reports.financial', 'reports.export', 'insights.view'

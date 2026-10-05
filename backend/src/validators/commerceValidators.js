@@ -66,7 +66,7 @@ const stockAdjustment = z.object({
 
 const transactionQuery = listQuery.merge(dateRangeQuery).extend({
   productId: optionalId,
-  type: z.enum(['opening', 'purchase', 'sale', 'refund', 'adjustment', 'stock_in', 'stock_out', 'damage', 'internal_use', 'service_use']).optional(),
+  type: z.enum(['opening', 'purchase', 'sale', 'refund', 'adjustment', 'stock_in', 'stock_out', 'damage', 'internal_use', 'service_use', 'void']).optional(),
 });
 
 const categoryBody = z.object({ name: requiredText(80, 'Category name'), description: optionalText(255), isActive: z.boolean().optional() });
@@ -161,7 +161,13 @@ const quoteItem = z.discriminatedUnion('type', [
   z.object({ type: z.literal('product'), productId: id, employeeId: optionalId, quantity: z.coerce.number().int().min(1).max(1000) }),
 ]);
 
+const timeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24-hour) format');
+
 const saleBody = z.object({
+  // "Record previous sale": the business date (and optional time) it happened.
+  soldDate: z.preprocess((v) => (v === '' ? undefined : v), isoDate.optional()),
+  soldTime: z.preprocess((v) => (v === '' ? undefined : v), timeOfDay.optional()),
+  backdateReason: optionalText(255),
   customerId: optionalId,
   appointmentId: optionalId,
   items: z.array(saleItem).min(1, 'Add at least one service or product').max(100),
@@ -172,10 +178,15 @@ const saleBody = z.object({
   loyaltyPoints: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
   payments: z.array(salePayment).max(4).optional().default([]),
   notes: optionalText(500),
+}).refine((d) => !d.soldDate || (d.backdateReason && d.backdateReason.trim().length >= 3), {
+  path: ['backdateReason'], message: 'Say why this sale is being recorded late',
 });
 
+const saleDateChange = z.object({ soldDate: isoDate, soldTime: timeOfDay.optional(), reason: requiredText(255, 'Reason') });
+
 const saleList = listQuery.merge(dateRangeQuery).extend({
-  status: z.enum(['completed', 'refunded']).optional(),
+  status: z.enum(['completed', 'refunded', 'voided']).optional(),
+  source: z.enum(['pos', 'backdated', 'import']).optional(),
   paymentStatus: z.enum(['paid', 'partial', 'unpaid']).optional(),
   method: paymentMethod.optional(),
   cashierId: optionalId,
@@ -216,10 +227,12 @@ module.exports = {
     discount: z.object({ type: z.enum(['none', 'amount', 'percentage']), value: money.optional().default(0) }).optional(),
     loyaltyPoints: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
   }), refund: z.object({ reason: requiredText(255, 'Reason') }),
+  voidSale: z.object({ reason: requiredText(255, 'Reason') }),
+  saleDateChange,
   serviceCorrection,
   serviceReview,
   saleItemParams: z.object({ id, itemId: id }),
-  paymentList: listQuery.merge(dateRangeQuery).extend({ method: paymentMethod.optional(), type: z.enum(['payment', 'refund']).optional() }),
+  paymentList: listQuery.merge(dateRangeQuery).extend({ method: paymentMethod.optional(), type: z.enum(['payment', 'refund', 'void']).optional() }),
   expenseBody, expenseUpdate: expenseBody.partial(), expenseList,
   payroll, percent,
 };

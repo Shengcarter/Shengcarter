@@ -137,7 +137,10 @@ describe('importing past sales', () => {
   beforeAll(async () => {
     admin = await signIn();
     await settings.load();
-    service = await db.queryOne('SELECT id, name, price FROM services WHERE is_active = 1 ORDER BY id LIMIT 1');
+    // A service on the general formula (the confirmed fixed-rule services have their own tests).
+    service = await db.queryOne(
+      "SELECT s.id, s.name, s.price FROM services s JOIN service_financial_rules r ON r.id = s.financial_rule_id WHERE s.is_active = 1 AND r.method = 'general' ORDER BY s.id LIMIT 1",
+    );
     product = await db.queryOne("SELECT id, name, selling_price, purchase_price, quantity FROM products WHERE status = 'active' AND quantity > 0 ORDER BY id LIMIT 1");
     staff = await db.queryOne("SELECT id, full_name FROM employees WHERE status = 'active' ORDER BY id LIMIT 1");
     customer = await db.queryOne('SELECT id, phone, full_name, loyalty_points, visit_count, total_spent FROM customers WHERE deleted_at IS NULL ORDER BY id LIMIT 1');
@@ -150,14 +153,14 @@ describe('importing past sales', () => {
     [day.toFormat('dd/MM/yyyy'), '10:30', 'R-9001', customer.phone, customer.full_name, 'Service', service.name, staff.full_name, 1, 12345, 'M-Pesa', ''],
     [day.toFormat('dd/MM/yyyy'), '10:30', 'R-9001', customer.phone, customer.full_name, 'Product', product.name, '', 2, '', 'M-Pesa', ''],
     // Receipt R-9002: a new customer.
-    [day.toJSDate(), '', 'R-9002', '0799222001', 'Import Sale Customer', '', service.name, '', 1, '5,000', 'cash', 'Paid late'],
+    [day.toJSDate(), '', 'R-9002', '0799222001', 'Import Sale Customer', '', service.name, staff.full_name, 1, '5,000', 'cash', 'Paid late'],
     // No receipt number: a walk-in on its own.
-    [day.toISODate(), '15:00', '', '', '', '', service.name, '', '', 4000, 'Card', ''],
+    [day.toISODate(), '15:00', '', '', '', '', service.name, staff.full_name, '', 4000, 'Card', ''],
     // Problems.
     [day.toISODate(), '', 'R-9003', '', '', '', 'Unicorn Treatment', '', 1, 1000, 'cash', ''],
     [DateTime.now().plus({ days: 3 }).toISODate(), '', 'R-9004', '', '', '', service.name, '', 1, 1000, 'cash', ''],
-    [day.toISODate(), '', 'R-9005', '', '', '', service.name, '', 1, 1000, 'cash', ''],
-    [day.minus({ days: 1 }).toISODate(), '', 'R-9005', '', '', '', service.name, '', 1, 1000, 'cash', ''],
+    [day.toISODate(), '', 'R-9005', '', '', '', service.name, staff.full_name, 1, 1000, 'cash', ''],
+    [day.minus({ days: 1 }).toISODate(), '', 'R-9005', '', '', '', service.name, staff.full_name, 1, 1000, 'cash', ''],
   ], 'Sales');
 
   test('preview groups rows into sales and explains every problem', async () => {
@@ -175,7 +178,7 @@ describe('importing past sales', () => {
     expect(byRow[8].status).toBe('error'); // its sale (R-9005) is imported whole or not at all
   });
 
-  test('imported sales record the exact amounts without touching stock, loyalty or commission', async () => {
+  test('imported sales record the exact amounts, split by the service rule, without touching stock or loyalty', async () => {
     const stockBefore = (await db.queryOne('SELECT quantity FROM products WHERE id = ?', [product.id])).quantity;
     const res = await upload(admin.token, '/imports/sales', await file(), 'old sales.xlsx', { skipInvalid: 'true' });
     expect(res.status).toBe(201);
@@ -184,16 +187,25 @@ describe('importing past sales', () => {
     const r1 = await db.queryOne("SELECT * FROM sales WHERE import_reference = 'R-9001'");
     expect(r1).toMatchObject({ is_imported: 1, customer_id: customer.id, tax_amount: 0, balance_due: 0, payment_status: 'paid' });
     expect(Number(r1.total)).toBe(12345 + Number(product.selling_price) * 2);
-    expect(Number(r1.cost_of_goods)).toBe(Number(product.purchase_price) * 2);
+    expect(r1.source).toBe('import');
+    // Entered now, not on the business date.
+    expect(Math.abs(new Date(r1.created_at).getTime() - Date.now())).toBeLessThan(5 * 60 * 1000);
+    const finance = await db.queryOne('SELECT * FROM sale_item_finance WHERE sale_id = ?', [r1.id]);
+    expect(Number(finance.price)).toBe(12345);
+    expect(Number(finance.product_cost) + Number(finance.operations_amount) + Number(finance.staff_pool) + Number(finance.salon_profit)).toBe(12345);
+    expect(finance.calculation_method).toBe('general');
+    expect(Number(r1.cost_of_goods)).toBe(Number(product.purchase_price) * 2 + Number(finance.product_cost));
     const local = DateTime.fromJSDate(r1.sold_at).setZone(settings.get('system.timezone'));
     expect(local.toFormat('yyyy-MM-dd HH:mm')).toBe(`${day.toISODate()} 10:30`);
     const items = await db.query('SELECT item_type, employee_id, line_total, commission_amount FROM sale_items WHERE sale_id = ? ORDER BY id', [r1.id]);
     expect(items).toEqual([
-      { item_type: 'service', employee_id: staff.id, line_total: 12345, commission_amount: 0 },
+      { item_type: 'service', employee_id: staff.id, line_total: 12345, commission_amount: Number(finance.staff_pool) },
       { item_type: 'product', employee_id: null, line_total: Number(product.selling_price) * 2, commission_amount: 0 },
     ]);
     expect((await db.queryOne('SELECT method, amount FROM payments WHERE sale_id = ?', [r1.id]))).toEqual({ method: 'mobile_money', amount: Number(r1.total) });
-    expect((await db.queryOne('SELECT COUNT(*) AS n FROM commissions WHERE sale_id = ?', [r1.id])).n).toBe(0);
+    // The staff share is commission already paid outside the system.
+    const commissions = await db.query('SELECT employee_id, amount, status, salary_record_id FROM commissions WHERE sale_id = ?', [r1.id]);
+    expect(commissions).toEqual([{ employee_id: staff.id, amount: Number(finance.staff_pool), status: 'paid', salary_record_id: null }]);
     expect((await db.queryOne('SELECT quantity FROM products WHERE id = ?', [product.id])).quantity).toBe(stockBefore);
 
     const after = await db.queryOne('SELECT loyalty_points, visit_count, total_spent FROM customers WHERE id = ?', [customer.id]);
@@ -220,6 +232,16 @@ describe('importing past sales', () => {
     const res = await admin.post(`/sales/${r1.id}/refund`, { reason: 'Import test refund' });
     expect(res.status).toBe(200);
     expect((await db.queryOne('SELECT quantity FROM products WHERE id = ?', [product.id])).quantity).toBe(stockBefore);
+  });
+
+  test('a service whose staff share has nobody to go to is flagged, not booked as profit', async () => {
+    const res = await upload(admin.token, '/imports/sales/preview', await workbook([
+      header,
+      [day.toISODate(), '', 'R-9100', '', '', 'Service', service.name, '', 1, 10000, 'cash', ''],
+    ], 'Sales'), 'no staff.xlsx');
+    const [row] = res.body.data.rows;
+    expect(row.status).toBe('error');
+    expect(row.messages[0]).toMatch(/Fill in Staff/);
   });
 
   test('the accountant may import sales and download the template', async () => {

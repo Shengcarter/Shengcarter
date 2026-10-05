@@ -101,14 +101,9 @@ function ThemeSelector() {
 function UserMenu() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
 
-  const onLogout = async () => {
-    await logout();
-    queryClient.clear();
-    navigate('/login', { replace: true });
-    toast.success('You have been signed out');
-  };
+  // Leaves the app with a full page load (see logout).
+  const onLogout = () => logout();
 
   return (
     <Dropdown

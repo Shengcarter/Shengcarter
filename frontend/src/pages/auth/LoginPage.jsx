@@ -21,6 +21,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const sessionExpired = useAuthStore((s) => s.sessionExpired);
+  const signedOut = new URLSearchParams(location.search).has('signedOut');
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState(null);
 
@@ -49,6 +50,13 @@ export default function LoginPage() {
       <p className="text-xs font-semibold tracking-[0.25em] text-accent uppercase">Welcome back</p>
       <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight">Sign in to your account</h1>
       <p className="mt-2 text-sm text-muted">ZOLA STYLISH MANAGEMENT SYSTEM</p>
+
+      {signedOut && !sessionExpired && !serverError ? (
+        <div role="status" className="mt-6 flex items-start gap-3 rounded-xl border border-line bg-surface-2 px-4 py-3 text-sm text-muted">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
+          You have been signed out.
+        </div>
+      ) : null}
 
       {sessionExpired && !serverError ? (
         <div role="status" className="mt-6 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-warning">

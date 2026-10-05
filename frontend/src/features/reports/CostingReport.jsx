@@ -9,6 +9,9 @@ import { bucketLabel } from './periods';
 import { Kpis, ReportState, ReportTable, compactMoney, count, money, percent, tableFrom } from './components';
 
 // The same four parts, in the same order and colours, everywhere the split is shown.
+const SOURCES = { pos: 'At the till', backdated: 'Recorded later', import: 'Imported' };
+const METHODS = { general: 'General formula', band: 'Service rule — fixed amounts', band_general: 'Service rule — general formula band' };
+
 const PARTS = [
   { key: 'productCost', label: 'Products used' },
   { key: 'operations', label: 'Operations' },
@@ -145,9 +148,65 @@ export function CostingReport({ params }) {
                 ]}
               />
             </div>
+            <div className="mt-6 grid gap-6 xl:grid-cols-2">
+              <ReportTable
+                title="By how sales were entered"
+                description="At the till, recorded later for an earlier date, or imported from a spreadsheet"
+                rows={(r.bySource || []).filter((x) => x.services)}
+                rowKey="source"
+                empty="No services in this period"
+                columns={[
+                  { key: 'source', header: 'Entered', render: (x) => SOURCES[x.source] },
+                  { key: 'sales', header: 'Sales', align: 'right', render: (x) => count(x.sales) },
+                  { key: 'revenue', header: 'Revenue', align: 'right', render: (x) => money(x.revenue) },
+                  { key: 'operations', header: 'Operations', align: 'right', render: (x) => money(x.operations) },
+                  { key: 'staffEarnings', header: 'Staff', align: 'right', render: (x) => money(x.staffEarnings) },
+                  { key: 'salonProfit', header: 'Salon profit', align: 'right', render: (x) => money(x.salonProfit) },
+                ]}
+              />
+              <ReportTable
+                title="By calculation"
+                description="The general formula, or a service's own rule"
+                rows={r.byMethod || []}
+                rowKey="method"
+                empty="No services in this period"
+                columns={[
+                  { key: 'method', header: 'Calculation', render: (x) => METHODS[x.method] || x.method },
+                  { key: 'services', header: 'Services', align: 'right', render: (x) => count(x.services) },
+                  { key: 'revenue', header: 'Revenue', align: 'right', render: (x) => money(x.revenue) },
+                  { key: 'staffEarnings', header: 'Staff', align: 'right', render: (x) => money(x.staffEarnings) },
+                  { key: 'salonProfit', header: 'Salon profit', align: 'right', render: (x) => money(x.salonProfit) },
+                ]}
+              />
+            </div>
+            <div className="mt-6">
+              <ReportTable
+                title="Recorded later, moved or voided"
+                description="Sales of this period entered after the day, moved to another date, or voided — with who and why"
+                empty="None in this period"
+                rows={r.corrections || []}
+                onRowClick={(x) => navigate(`/pos/sales/${x.id}`)}
+                columns={[
+                  { key: 'invoiceNumber', header: 'Invoice', render: (x) => <span className="font-medium">{x.invoiceNumber}</span> },
+                  {
+                    key: 'status', header: 'What', render: (x) => (
+                      <span className="flex flex-wrap gap-1">
+                        {x.status === 'voided' ? <Badge tone="danger">Voided</Badge> : null}
+                        {x.source === 'backdated' ? <Badge tone="warning">Recorded later</Badge> : null}
+                        {x.moved ? <Badge tone="info">Date changed</Badge> : null}
+                      </span>
+                    ),
+                  },
+                  { key: 'soldAt', header: 'Business date', render: (x) => <span className="text-xs">{formatDateTime(x.soldAt)}</span> },
+                  { key: 'createdAt', header: 'Entered', render: (x) => <span className="text-xs text-muted">{formatDateTime(x.createdAt)} · {x.enteredBy}</span> },
+                  { key: 'total', header: 'Total', align: 'right', render: (x) => money(x.total) },
+                  { key: 'reason', header: 'Reason', render: (x) => <span className="text-xs text-muted">{x.voidReason || x.backdateReason || ''}</span> },
+                ]}
+              />
+            </div>
             <p className="mt-6 flex items-center gap-1.5 text-xs text-muted">
               <Sparkles className="size-3.5" aria-hidden />
-              Figures are stored when each service is sold, with the percentages in force then, so later price or rule changes never alter them. Refunded sales are left out; imported past sales have no products recorded and are not included.
+              Figures are stored when each service is sold, with the rule and percentages in force then, so later price or rule changes never alter them. Refunded and voided sales are left out. Imported sales are split with each service's rule; their product cost is estimated from the service's usual products.
             </p>
           </>
         );

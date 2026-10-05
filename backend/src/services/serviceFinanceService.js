@@ -5,10 +5,12 @@ const ApiError = require('../utils/ApiError');
 const { D, round, toNumber } = require('../utils/money');
 const { hasPermission } = require('../middleware/auth');
 const { calculateTotals, splitEvenly } = require('./pricing');
-const { productCost, splitService } = require('./costing');
+const { productCost } = require('./costing');
+const { calculateServiceFinancials, FinancialRuleError, normalizeRule, ruleFromSnapshot, findBand, GENERAL_RULE } = require('./financialRules');
 const settings = require('./settingsService');
 const inventoryService = require('./inventoryService');
 const audit = require('./auditService');
+const { localDateString, todayLocal } = require('../utils/time');
 
 /**
  * Service finances: the products a service uses and the money split of every
@@ -43,11 +45,41 @@ function canSeeCosts(ctx) {
   return hasPermission(ctx.user, 'reports.financial') || hasPermission(ctx.user, 'sales.correct');
 }
 
-/** Split one service, turning a bad rule or amount into a clear API error. */
-function split({ price, productCost: cost, rates, staffCount, rule, decimals }) {
+/**
+ * Each service's current financial rule: Map serviceId → { id, version, method, config }.
+ * A service without a rule (none should remain after setup) uses the general formula.
+ */
+async function rulesFor(serviceIds, conn) {
+  const ids = [...new Set(serviceIds)];
+  const map = new Map();
+  if (!ids.length) return map;
+  const rows = await db.query(
+    `SELECT s.id AS service_id, r.id, r.version, r.method, r.config
+     FROM services s LEFT JOIN service_financial_rules r ON r.id = s.financial_rule_id WHERE s.id IN (?)`,
+    [ids],
+    conn,
+  );
+  for (const r of rows) {
+    const config = normalizeRule(r.id ? (typeof r.config === 'string' ? JSON.parse(r.config) : r.config) : GENERAL_RULE);
+    map.set(r.service_id, { id: r.id || null, version: r.version || null, method: config.method, config });
+  }
+  return map;
+}
+
+/**
+ * Run the financial engine, turning a missing or unbalanced rule into a clear
+ * API error (the sale, quote, correction or import row is refused).
+ */
+function calculate({ price, productCost: cost, staffCount, rule, rates, serviceName, decimals, field = 'items', discounted = false }) {
   try {
-    return splitService({ price, productCost: cost, rates, staffCount, rule, decimals });
+    return calculateServiceFinancials({ price, productCost: cost, staffCount, rule, generalRates: rates, serviceName, decimals });
   } catch (error) {
+    if (error instanceof FinancialRuleError) {
+      const hint = error.code === 'no_band' && discounted
+        ? ' That is its price after the discount: take the discount off this service, or ask an administrator to add a rule for this price.'
+        : '';
+      throw ApiError.validation([{ field, message: error.message + hint }]);
+    }
     if (error instanceof RangeError) throw ApiError.badRequest(`Service costing: ${error.message}. Check Settings → Financial.`);
     throw error;
   }
@@ -283,16 +315,25 @@ function serviceRevenue(netAmount, tax, decimals) {
   return round(netAmount, decimals);
 }
 
-/** Cost and split a service line of a sale being completed (nothing is saved yet). */
-function costLine({ line, tax, decimals, rates = rules() }) {
-  return split({
+/**
+ * Cost and split a service line (nothing is saved yet) with the service's own
+ * financial rule: the same calculation for the till, a sale recorded for a
+ * previous date, a correction and an Excel import.
+ */
+function costLine({ line, tax, decimals, rates = rules(), field = 'items' }) {
+  const discounted = line.lineTotal !== undefined && !D(line.netAmount).equals(line.lineTotal);
+  const costing = calculate({
+    discounted,
     price: serviceRevenue(line.netAmount, tax, decimals),
     productCost: line.usage.total,
-    rates,
     staffCount: line.staff.length,
-    rule: rates.rule,
+    rule: line.rule?.config,
+    rates,
+    serviceName: line.description,
     decimals,
+    field,
   });
+  return { ...costing, ruleId: line.rule?.id || null, ruleVersion: line.rule?.version || null, productCostBasis: line.usage.basis || (line.usage.lines.length ? 'recorded' : 'none') };
 }
 
 /**
@@ -301,7 +342,7 @@ function costLine({ line, tax, decimals, rates = rules() }) {
  * rows for people no longer on the line are removed, new people get new rows.
  * @returns {Set<number>} pending payouts whose totals must be refreshed
  */
-async function writeStaff(conn, { saleItemId, saleId, branchId, staff, revenueShares, costing, at }) {
+async function writeStaff(conn, { saleItemId, saleId, branchId, staff, revenueShares, costing, at, commissionStatus = 'earned' }) {
   await db.query('DELETE FROM sale_item_staff WHERE sale_item_id = ?', [saleItemId], conn);
   const decimals = MONEY_DECIMALS();
   const baseShares = costing ? splitEvenly(costing.distributable, Math.max(1, staff.length), decimals) : [];
@@ -319,15 +360,17 @@ async function writeStaff(conn, { saleItemId, saleId, branchId, staff, revenueSh
     const amount = costing ? costing.staffShares[i] : D(0);
     const row = existing.find((c) => c.employee_id === person.id);
     if (row?.salary_record_id) touched.add(row.salary_record_id);
+    // Fixed-amount rules have no staff percentage.
+    const rate = costing?.rates ? costing.rates.employee : 0;
     if (row && amount.greaterThan(0)) {
-      await db.query('UPDATE commissions SET base_amount = ?, rate = ?, amount = ? WHERE id = ?', [toNumber(baseShares[i], decimals), costing.rates.employee, toNumber(amount, decimals), row.id], conn);
+      await db.query('UPDATE commissions SET base_amount = ?, rate = ?, amount = ? WHERE id = ?', [toNumber(baseShares[i], decimals), rate, toNumber(amount, decimals), row.id], conn);
     } else if (row) {
       await db.query('DELETE FROM commissions WHERE id = ?', [row.id], conn);
     } else if (amount.greaterThan(0)) {
       await db.query(
-        `INSERT INTO commissions (employee_id, branch_id, sale_id, sale_item_id, base_amount, rate, amount, earned_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [person.id, branchId, saleId, saleItemId, toNumber(baseShares[i], decimals), costing.rates.employee, toNumber(amount, decimals), at, at],
+        `INSERT INTO commissions (employee_id, branch_id, sale_id, sale_item_id, base_amount, rate, amount, status, earned_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
+        [person.id, branchId, saleId, saleItemId, toNumber(baseShares[i], decimals), rate, toNumber(amount, decimals), commissionStatus, at],
         conn,
       );
     }
@@ -372,38 +415,54 @@ async function writeUsage(conn, { saleItemId, saleId, branchId, usage, reason, u
 function financeValues(costing) {
   const decimals = MONEY_DECIMALS();
   const m = (v) => toNumber(v, decimals);
+  const rates = costing.rates || {};
   return {
-    price: m(costing.price), product_cost: m(costing.productCost), amount_after_products: m(costing.afterProducts),
-    operations_rate: costing.rates.operations, operations_amount: m(costing.operations), distributable_amount: m(costing.distributable),
-    staff_rate: costing.rates.employee, staff_pool: m(costing.staffPool), profit_rate: costing.rates.profit, salon_profit: m(costing.salonProfit),
+    price: m(costing.price), product_cost: m(costing.productCost), consumption_cost: m(costing.consumptionCost ?? costing.productCost),
+    product_cost_basis: costing.productCostBasis || 'recorded', amount_after_products: m(costing.afterProducts),
+    operations_rate: rates.operations ?? null, operations_amount: m(costing.operations), distributable_amount: m(costing.distributable),
+    staff_rate: rates.employee ?? null, staff_pool: m(costing.staffPool), profit_rate: rates.profit ?? null, salon_profit: m(costing.salonProfit),
     staff_count: costing.staffShares.length, split_rule: costing.rule, margin_status: costing.marginStatus,
+    calculation_method: costing.method || 'general', rule_id: costing.ruleId || null, rule_version: costing.ruleVersion || null,
+    rule_snapshot: JSON.stringify(costing.snapshot || null),
   };
 }
 
 /** Save the breakdown of a service line of a sale being completed. */
-async function recordLine(conn, { saleItemId, saleId, branchId, line, costing, at, invoiceNumber, userId }) {
-  await writeUsage(conn, { saleItemId, saleId, branchId, usage: line.usage, reason: `Used for ${line.description} on ${invoiceNumber}`, userId, at });
+async function recordLine(conn, { saleItemId, saleId, branchId, line, costing, at, stockAt = at, invoiceNumber, userId, note = '' }) {
+  await writeUsage(conn, { saleItemId, saleId, branchId, usage: line.usage, reason: `Used for ${line.description} on ${invoiceNumber}${note}`, userId, at: stockAt });
   const v = financeValues(costing);
   await db.query(
-    `INSERT INTO sale_item_finance (sale_item_id, sale_id, branch_id, service_id, service_name, performed_at, price, product_cost, amount_after_products,
-       operations_rate, operations_amount, distributable_amount, staff_rate, staff_pool, profit_rate, salon_profit, staff_count, split_rule,
-       margin_status, review_status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [saleItemId, saleId, branchId, line.serviceId, line.description, at, v.price, v.product_cost, v.amount_after_products,
-      v.operations_rate, v.operations_amount, v.distributable_amount, v.staff_rate, v.staff_pool, v.profit_rate, v.salon_profit, v.staff_count, v.split_rule,
-      v.margin_status, costing.needsReview ? 'pending' : 'not_needed', at],
+    `INSERT INTO sale_item_finance (sale_item_id, sale_id, branch_id, service_id, service_name, performed_at, price, product_cost, consumption_cost,
+       product_cost_basis, amount_after_products, operations_rate, operations_amount, distributable_amount, staff_rate, staff_pool, profit_rate,
+       salon_profit, staff_count, split_rule, calculation_method, rule_id, rule_version, rule_snapshot, margin_status, review_status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
+    [saleItemId, saleId, branchId, line.serviceId, line.description, at, v.price, v.product_cost, v.consumption_cost,
+      v.product_cost_basis, v.amount_after_products, v.operations_rate, v.operations_amount, v.distributable_amount, v.staff_rate, v.staff_pool, v.profit_rate,
+      v.salon_profit, v.staff_count, v.split_rule, v.calculation_method, v.rule_id, v.rule_version, v.rule_snapshot, v.margin_status,
+      costing.needsReview ? 'pending' : 'not_needed'],
     conn,
   );
 }
 
 // ---- Reading ---------------------------------------------------------------------------------------
 
+const rateOf = (v) => (v === null || v === undefined ? null : Number(v));
+
+function snapshotOf(r) {
+  if (!r.rule_snapshot) return null;
+  return typeof r.rule_snapshot === 'string' ? JSON.parse(r.rule_snapshot) : r.rule_snapshot;
+}
+
 function financeFromRow(r) {
+  const snapshot = snapshotOf(r);
   return {
-    price: Number(r.price), productCost: Number(r.product_cost), amountAfterProducts: Number(r.amount_after_products),
-    operationsRate: Number(r.operations_rate), operations: Number(r.operations_amount), distributable: Number(r.distributable_amount),
-    staffRate: Number(r.staff_rate), staffPool: Number(r.staff_pool), profitRate: Number(r.profit_rate), salonProfit: Number(r.salon_profit),
+    price: Number(r.price), productCost: Number(r.product_cost), consumptionCost: Number(r.consumption_cost ?? r.product_cost),
+    productCostBasis: r.product_cost_basis || 'recorded', amountAfterProducts: Number(r.amount_after_products),
+    operationsRate: rateOf(r.operations_rate), operations: Number(r.operations_amount), distributable: Number(r.distributable_amount),
+    staffRate: rateOf(r.staff_rate), staffPool: Number(r.staff_pool), profitRate: rateOf(r.profit_rate), salonProfit: Number(r.salon_profit),
     staffCount: r.staff_count, splitRule: r.split_rule, marginStatus: r.margin_status, reviewStatus: r.review_status,
+    calculationMethod: r.calculation_method || 'general', ruleId: r.rule_id || null, ruleVersion: r.rule_version || null,
+    band: snapshot?.band ? { min: snapshot.band.min, max: snapshot.band.max, label: snapshot.band.label || null } : null,
     reviewNote: r.review_note, reviewedBy: r.reviewed_by_name || null, reviewedAt: r.reviewed_at, revision: r.revision,
   };
 }
@@ -467,15 +526,22 @@ async function snapshot(conn, saleItemId) {
   return {
     unitPrice: Number(item.unit_price),
     price: f.price, productCost: f.productCost, operations: f.operations, staffPool: f.staffPool, salonProfit: f.salonProfit, marginStatus: f.marginStatus,
+    calculationMethod: f.calculationMethod, ruleVersion: f.ruleVersion,
     products: products.map((p) => ({ productId: p.product_id, name: p.product_name, unit: p.unit, quantity: Number(p.quantity), unitCost: Number(p.unit_cost), cost: Number(p.total_cost) })),
     staff: staff.map((s) => ({ id: s.employee_id, name: s.full_name, share: Number(s.commission_amount) })),
   };
 }
 
+/**
+ * Refuse once a commission from these lines was paid out. Imported history's
+ * commissions were settled outside the system (no payout here), so they can
+ * still be corrected.
+ */
 async function assertPayNotPaid(conn, itemIds) {
   const paid = await db.queryOne(
     `SELECT e.full_name, r.paid_at FROM commissions c JOIN employees e ON e.id = c.employee_id LEFT JOIN salary_records r ON r.id = c.salary_record_id
-     WHERE c.sale_item_id IN (?) AND (c.status = 'paid' OR r.status = 'paid') LIMIT 1`,
+     JOIN sales s ON s.id = c.sale_id
+     WHERE c.sale_item_id IN (?) AND (c.status = 'paid' OR r.status = 'paid') AND NOT (s.is_imported = 1 AND c.salary_record_id IS NULL) LIMIT 1`,
     [itemIds],
     conn,
   );
@@ -495,8 +561,9 @@ async function loadTeam(conn, employeeIds, branchId) {
 
 /**
  * Correct a completed service: products used (quantity or cost), price and/or
- * staff. The service is recalculated with the percentages that applied when it
- * was sold; stock moves for any change in products used; staff commissions and
+ * staff. The service is recalculated with the rule (and percentages) that
+ * applied when it was sold — or, when a new price is outside that rule's price
+ * band, with the service's current rule; stock moves for any change in products used; staff commissions and
  * pending payouts follow; and the previous and new figures are kept with the
  * reason. A price change re-totals the sale (other lines' shares of an invoice
  * discount can change, so they are recalculated too).
@@ -506,7 +573,10 @@ async function correct(saleId, saleItemId, data, ctx) {
   await db.withTransaction(async (conn) => {
     const sale = await db.queryOne('SELECT * FROM sales WHERE id = ? FOR UPDATE', [saleId], conn);
     if (!sale || sale.branch_id !== ctx.branchId) throw ApiError.notFound('Sale not found');
-    if (sale.status !== 'completed') throw ApiError.badRequest('A refunded sale cannot be corrected');
+    if (sale.status !== 'completed') throw ApiError.badRequest(`A ${sale.status} sale cannot be corrected`);
+    if (localDateString(sale.sold_at) < todayLocal() && !hasPermission(ctx.user, 'sales.edit_history')) {
+      throw ApiError.forbidden('This sale is from a previous day. Correcting it needs the "Change past sales" permission.');
+    }
     const items = await db.query('SELECT * FROM sale_items WHERE sale_id = ? ORDER BY id FOR UPDATE', [saleId], conn);
     const item = items.find((i) => i.id === saleItemId);
     const finance = await db.queryOne('SELECT * FROM sale_item_finance WHERE sale_item_id = ? FOR UPDATE', [saleItemId], conn);
@@ -554,6 +624,7 @@ async function correct(saleId, saleItemId, data, ctx) {
     }
 
     const touchedPayouts = new Set();
+    const currentRules = await rulesFor(finances.map((x) => x.service_id).filter(Boolean), conn);
     for (const id of affected) {
       const f = finances.find((x) => x.sale_item_id === id);
       const line = items.find((i) => i.id === id);
@@ -566,10 +637,13 @@ async function correct(saleId, saleItemId, data, ctx) {
         ? data.consumption
         : saved.map((u) => ({ productId: u.product_id, quantity: Number(u.quantity) }));
       const products = await loadProducts(conn, [...rows.map((r) => r.productId), ...saved.map((u) => u.product_id)], { lock: true });
-      const usage = priceUsage(rows, products, { branchId: sale.branch_id, decimals, field: 'consumption', previous });
+      const changesUsage = isTarget && Boolean(data.consumption);
+      let usage = priceUsage(rows, products, { branchId: sale.branch_id, decimals, field: 'consumption', previous });
+      // An imported sale's product cost is an estimate from the recipe, kept until corrected.
+      if (f.product_cost_basis === 'recipe_estimate' && !changesUsage) usage = { lines: [], total: D(f.consumption_cost) };
 
-      // Stock follows the change in products used.
-      if (isTarget && data.consumption) {
+      // Stock follows the change in products used (imported history never moved stock).
+      if (changesUsage && !sale.is_imported) {
         const deltas = new Map();
         for (const u of saved) deltas.set(u.product_id, D(u.stock_quantity));
         for (const l of usage.lines) deltas.set(l.productId, (deltas.get(l.productId) || D(0)).minus(l.stockQuantity));
@@ -596,25 +670,41 @@ async function correct(saleId, saleItemId, data, ctx) {
       const team = await loadTeam(conn, isTarget && data.employeeIds ? data.employeeIds : staffRows.map((r) => r.employee_id), sale.branch_id);
       if (!team.length) throw ApiError.validation([{ field: 'employeeIds', message: 'A service needs at least one person who performed it' }]);
 
-      // Recalculated with the percentages that applied when it was sold.
-      const rates = { operations: Number(f.operations_rate), employee: Number(f.staff_rate), profit: Number(f.profit_rate) };
-      const costing = split({
-        price: serviceRevenue(nets.get(id), { mode: sale.tax_mode, rate: sale.tax_rate }, decimals),
-        productCost: usage.total, rates, staffCount: team.length, rule: f.split_rule, decimals,
-      });
+      // Recalculated with the rule that applied when it was sold. A new price
+      // outside that rule's band takes the service's current rule instead.
+      const price = serviceRevenue(nets.get(id), { mode: sale.tax_mode, rate: sale.tax_rate }, decimals);
+      const original = ruleFromSnapshot(snapshotOf(f) || { method: 'general', rates: { operations: f.operations_rate, employee: f.staff_rate, profit: f.profit_rate } });
+      let applied = { config: original.rule, rates: original.rates || rules(), id: f.rule_id, version: f.rule_version };
+      if (original.rule.method === 'bands' && !findBand(normalizeRule(original.rule), price)) {
+        const current = currentRules.get(f.service_id);
+        if (current) applied = { config: current.config, rates: rules(), id: current.id, version: current.version };
+      }
+      const costing = {
+        ...calculate({
+          price, productCost: usage.total, staffCount: team.length, rule: applied.config, rates: applied.rates,
+          serviceName: line.description, decimals, field: isTarget ? 'price' : 'items',
+        }),
+        ruleId: applied.id || null,
+        ruleVersion: applied.version || null,
+        productCostBasis: f.product_cost_basis === 'recipe_estimate' && !changesUsage ? 'recipe_estimate' : (usage.lines.length ? 'recorded' : 'none'),
+      };
       const revenueShares = splitEvenly(nets.get(id), team.length, decimals);
-      for (const payout of await writeStaff(conn, { saleItemId: id, saleId, branchId: sale.branch_id, staff: team, revenueShares, costing, at: sale.sold_at })) {
+      const commissionStatus = sale.is_imported ? 'paid' : 'earned';
+      for (const payout of await writeStaff(conn, { saleItemId: id, saleId, branchId: sale.branch_id, staff: team, revenueShares, costing, at: sale.sold_at, commissionStatus })) {
         touchedPayouts.add(payout);
       }
       const v = financeValues(costing);
       const stillFlagged = costing.needsReview;
       await db.query(
-        `UPDATE sale_item_finance SET price = ?, product_cost = ?, amount_after_products = ?, operations_amount = ?, distributable_amount = ?,
-           staff_pool = ?, salon_profit = ?, staff_count = ?, margin_status = ?, review_status = ?, review_note = ?, reviewed_by = ?, reviewed_at = ?,
-           revision = revision + 1
+        `UPDATE sale_item_finance SET price = ?, product_cost = ?, consumption_cost = ?, product_cost_basis = ?, amount_after_products = ?,
+           operations_rate = ?, operations_amount = ?, distributable_amount = ?, staff_rate = ?, staff_pool = ?, profit_rate = ?, salon_profit = ?,
+           staff_count = ?, calculation_method = ?, rule_id = ?, rule_version = ?, rule_snapshot = ?, margin_status = ?,
+           review_status = ?, review_note = ?, reviewed_by = ?, reviewed_at = ?, revision = revision + 1
          WHERE sale_item_id = ?`,
-        [v.price, v.product_cost, v.amount_after_products, v.operations_amount, v.distributable_amount, v.staff_pool, v.salon_profit, v.staff_count,
-          v.margin_status, stillFlagged ? 'pending' : 'not_needed', null, null, null, id],
+        [v.price, v.product_cost, v.consumption_cost, v.product_cost_basis, v.amount_after_products,
+          v.operations_rate, v.operations_amount, v.distributable_amount, v.staff_rate, v.staff_pool, v.profit_rate, v.salon_profit,
+          v.staff_count, v.calculation_method, v.rule_id, v.rule_version, v.rule_snapshot, v.margin_status,
+          stillFlagged ? 'pending' : 'not_needed', null, null, null, id],
         conn,
       );
       await db.query(
@@ -644,7 +734,9 @@ async function correct(saleId, saleItemId, data, ctx) {
     await audit.record(ctx, {
       action: 'sale.service_corrected', entityType: 'sale', entityId: saleId,
       description: `Corrected ${item.description} on ${sale.invoice_number}: ${data.reason}`,
-      metadata: { saleItemId, changed: Object.keys(data).filter((k) => k !== 'reason'), before: before.get(saleItemId) },
+      metadata: { saleItemId, changed: Object.keys(data).filter((k) => k !== 'reason') },
+      before: before.get(saleItemId),
+      after: await snapshot(conn, saleItemId),
     }, conn);
   });
 }
@@ -679,7 +771,7 @@ function effectiveRate(costing) {
 }
 
 module.exports = {
-  rules, canSeeCosts, usageOf, loadProducts, priceUsage, describeUsage, assertInStock, recipesFor, setRecipe,
+  rules, rulesFor, calculate, snapshotOf, canSeeCosts, usageOf, loadProducts, priceUsage, describeUsage, assertInStock, recipesFor, setRecipe,
   appointmentUsage, recordAppointmentProducts, serviceRevenue, costLine, writeStaff, refreshPayouts, recordLine, effectiveRate,
   forSale, correct, review,
 };

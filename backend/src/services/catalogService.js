@@ -6,6 +6,8 @@ const { camelizeRow, camelizeRows } = require('../utils/case');
 const { contains } = require('../utils/sql');
 const audit = require('./auditService');
 const serviceFinance = require('./serviceFinanceService');
+const serviceRules = require('./serviceRuleService');
+const { GENERAL_RULE, normalizeRule } = require('./financialRules');
 
 /**
  * Salon service catalog: categories and services, plus which employees can
@@ -76,6 +78,7 @@ async function attachEmployees(services, ctx) {
   );
   // The products each service normally uses in this branch, with their expected cost.
   const recipes = branchId ? await serviceFinance.recipesFor(services.map((s) => s.id), branchId) : new Map();
+  const rules = await serviceRules.summaries(services.map((s) => s.id), ctx);
   const showCosts = serviceFinance.canSeeCosts(ctx);
   return services.map((s) => {
     const recipe = (recipes.get(s.id) || []).map((r) => (showCosts ? r : { productId: r.productId, name: r.name, unit: r.unit, quantity: r.quantity, inStock: r.inStock }));
@@ -83,6 +86,7 @@ async function attachEmployees(services, ctx) {
       ...s,
       employees: rows.filter((r) => r.service_id === s.id).map((r) => ({ id: r.id, fullName: r.full_name, calendarColor: r.calendar_color })),
       recipe,
+      financialRule: rules.get(s.id) || null,
       ...(showCosts ? { expectedProductCost: recipe.reduce((sum, r) => sum + r.cost, 0) } : {}),
     };
   });
@@ -200,6 +204,14 @@ async function saveService(id, data, ctx) {
         conn,
       );
       targetId = result.insertId;
+      // A new service starts on the general formula, as every service did before
+      // per-service rules; an administrator can give it its own rule.
+      const rule = await db.query(
+        'INSERT INTO service_financial_rules (service_id, version, method, config, notes, created_by) VALUES (?, 1, ?, ?, ?, ?)',
+        [targetId, GENERAL_RULE.method, JSON.stringify(normalizeRule(GENERAL_RULE)), 'General formula (default for a new service)', ctx.userId],
+        conn,
+      );
+      await db.query('UPDATE services SET financial_rule_id = ? WHERE id = ?', [rule.insertId, targetId], conn);
       await audit.record(ctx, { action: 'service.created', entityType: 'service', entityId: targetId, description: `Created service ${data.name}` }, conn);
     }
     if (data.employeeIds) await setServiceEmployees(conn, targetId, data.employeeIds, ctx.branchId);

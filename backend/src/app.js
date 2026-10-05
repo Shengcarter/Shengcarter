@@ -98,15 +98,31 @@ function createApp() {
     }),
   );
 
+  // API responses hold personal and financial data: never stored by the browser
+  // or a proxy, so nothing can be shown again from cache after signing out.
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+    next();
+  });
   app.use('/api', apiLimiter, routes);
   app.use('/api', notFound);
 
   // Built frontend (single-page app). Unknown paths fall back to index.html.
   const indexHtml = path.join(config.paths.frontendDist, 'index.html');
   if (config.serveFrontend && fs.existsSync(indexHtml)) {
-    app.use(express.static(config.paths.frontendDist, { index: false, maxAge: '1y', immutable: true }));
+    // Hashed assets are cached for good. The page itself is never stored, so the
+    // browser cannot restore a signed-in screen from its back/forward cache.
+    app.use(express.static(config.paths.frontendDist, {
+      index: false,
+      maxAge: '1y',
+      immutable: true,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
+      },
+    }));
     app.get(/^(?!\/(api|uploads)\/).*/, (_req, res) => {
-      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Cache-Control', 'no-store');
       res.sendFile(indexHtml);
     });
   }

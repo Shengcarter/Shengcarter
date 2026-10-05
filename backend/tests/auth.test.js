@@ -1,6 +1,8 @@
 'use strict';
 
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const config = require('../src/config');
 const { getApp, signIn, request, db, ADMIN, DEMO, uniquePhone } = require('./helpers');
 
 describe('authentication', () => {
@@ -100,6 +102,124 @@ describe('authentication', () => {
     expect(replay.status).toBe(401);
     const stolen = await request(server).post('/api/auth/refresh').set('Cookie', secondCookie);
     expect(stolen.status).toBe(401);
+  });
+});
+
+describe('sessions', () => {
+  const cookieOf = (res) => res.headers['set-cookie'].find((c) => c.startsWith('zola_rt='));
+  const bearerGet = async (token, url = '/api/customers') => request(await getApp()).get(url).set('Authorization', `Bearer ${token}`);
+  const familyOf = async (token) => jwt.decode(token).sid;
+
+  test('the refresh cookie is HttpOnly and SameSite=Strict, and lasts only for the browser session without "remember me"', async () => {
+    const server = await getApp();
+    const plain = cookieOf(await request(server).post('/api/auth/login').send(ADMIN));
+    expect(plain).toMatch(/HttpOnly/i);
+    expect(plain).toMatch(/SameSite=Strict/i);
+    expect(plain).not.toMatch(/Expires=/i);
+    const remembered = cookieOf(await request(server).post('/api/auth/login').send({ ...ADMIN, remember: true }));
+    expect(remembered).toMatch(/Expires=/i);
+  });
+
+  test('signing out ends the session at once: the access token stops working too, and history cannot bring it back', async () => {
+    const server = await getApp();
+    const agent = request.agent(server);
+    const login = await agent.post('/api/auth/login').send(ADMIN);
+    const token = login.body.data.accessToken;
+    expect((await bearerGet(token)).status).toBe(200);
+
+    expect((await agent.post('/api/auth/logout').set('Authorization', `Bearer ${token}`)).status).toBe(200);
+    const after = await bearerGet(token);
+    expect(after.status).toBe(401);
+    expect(after.body.code).toBe('SESSION_ENDED');
+    expect((await agent.post('/api/auth/refresh')).status).toBe(401);
+  });
+
+  test('signing out with only the access token (another tab) also ends the cookie session', async () => {
+    const server = await getApp();
+    const agent = request.agent(server);
+    const token = (await agent.post('/api/auth/login').send(ADMIN)).body.data.accessToken;
+    expect((await request(server).post('/api/auth/logout').set('Authorization', `Bearer ${token}`)).status).toBe(200);
+    expect((await agent.post('/api/auth/refresh')).status).toBe(401);
+    expect((await bearerGet(token)).status).toBe(401);
+  });
+
+  test('signing in again starts a new session and ends the one this browser had', async () => {
+    const server = await getApp();
+    const agent = request.agent(server);
+    const first = (await agent.post('/api/auth/login').send(ADMIN)).body.data.accessToken;
+    const second = (await agent.post('/api/auth/login').send(ADMIN)).body.data.accessToken;
+    expect(await familyOf(first)).not.toBe(await familyOf(second));
+    expect((await bearerGet(first)).status).toBe(401);
+    expect((await bearerGet(second)).status).toBe(200);
+  });
+
+  test('a session ends a fixed time after sign-in, however often it is refreshed', async () => {
+    const server = await getApp();
+    const agent = request.agent(server);
+    const token = (await agent.post('/api/auth/login').send(ADMIN)).body.data.accessToken;
+    expect((await agent.post('/api/auth/refresh')).status).toBe(200);
+    // Signed in 25 hours ago (normal sessions last at most SESSION_MAX_HOURS = 24).
+    await db.query('UPDATE refresh_tokens SET session_started_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 25 HOUR) WHERE family_id = ?', [await familyOf(token)]);
+    const expired = await agent.post('/api/auth/refresh');
+    expect(expired.status).toBe(401);
+    expect(expired.body.code).toBe('SESSION_EXPIRED');
+    expect((await bearerGet(token)).status).toBe(401);
+  });
+
+  test('an expired or forged access token is refused, and so is one from before sessions were checked', async () => {
+    const admin = await signIn();
+    const { sub, sid } = jwt.decode(admin.token);
+    const expired = jwt.sign({ sub, sid, type: 'access' }, config.auth.jwtSecret, { algorithm: 'HS256', expiresIn: -10 });
+    expect((await bearerGet(expired)).body.code).toBe('TOKEN_EXPIRED');
+    const forged = jwt.sign({ sub, sid, type: 'access' }, 'not-the-server-secret-but-long-enough-0123456789', { algorithm: 'HS256' });
+    expect((await bearerGet(forged)).status).toBe(401);
+    const noSession = jwt.sign({ sub, type: 'access' }, config.auth.jwtSecret, { algorithm: 'HS256', expiresIn: '15m' });
+    expect((await bearerGet(noSession)).body.code).toBe('SESSION_ENDED');
+  });
+
+  test('changing the password keeps this session and ends every other one', async () => {
+    const admin = await signIn();
+    const role = (await admin.get('/roles')).body.data.find((r) => r.slug === 'receptionist');
+    const email = `sessions.${Date.now()}@test.local`;
+    await admin.post('/users', { fullName: 'Session Tester', email, roleId: role.id, password: 'Session2026!' });
+    await db.query('UPDATE users SET must_change_password = 0 WHERE email = ?', [email]);
+    const here = await signIn({ email, password: 'Session2026!' });
+    const elsewhere = await signIn({ email, password: 'Session2026!' });
+    const changed = await here.post('/auth/change-password', { currentPassword: 'Session2026!', newPassword: 'Session2027!', confirmPassword: 'Session2027!' });
+    expect(changed.status).toBe(200);
+    expect((await bearerGet(changed.body.data.accessToken, '/api/auth/me')).status).toBe(200);
+    expect((await bearerGet(here.token, '/api/auth/me')).status).toBe(200);
+    expect((await bearerGet(elsewhere.token, '/api/auth/me')).status).toBe(401);
+  });
+
+  test('the cookie endpoints refuse requests started by another site (CSRF)', async () => {
+    const server = await getApp();
+    const agent = request.agent(server);
+    expect((await agent.post('/api/auth/login').set('Origin', 'https://evil.example').send(ADMIN)).status).toBe(403);
+    const ok = await agent.post('/api/auth/login').set('Origin', config.corsOrigins[0]).send(ADMIN);
+    expect(ok.status).toBe(200);
+    const forged = await agent.post('/api/auth/refresh').set('Origin', 'https://evil.example');
+    expect(forged.status).toBe(403);
+    expect(forged.body.code).toBe('CROSS_SITE_REQUEST');
+    expect((await agent.post('/api/auth/logout').set('Referer', 'https://evil.example/page')).status).toBe(403);
+    expect((await agent.post('/api/auth/refresh').set('Origin', 'null')).status).toBe(403);
+    // The session survived the forged requests.
+    expect((await agent.post('/api/auth/refresh').set('Origin', config.corsOrigins[0])).status).toBe(200);
+  });
+
+  test('API responses are never stored by the browser', async () => {
+    const admin = await signIn();
+    const res = await admin.get('/auth/me');
+    expect(res.headers['cache-control']).toBe('no-store');
+    const denied = await request(await getApp()).get('/api/customers');
+    expect(denied.headers['cache-control']).toBe('no-store');
+  });
+
+  test('a signed-in user without permission is refused by the server, whatever the screen shows', async () => {
+    const stylist = await signIn(DEMO.stylist);
+    expect((await stylist.get('/sales')).status).toBe(403);
+    expect((await stylist.post('/sales/1/void', { reason: 'Not mine' })).status).toBe(403);
+    expect((await stylist.put('/services/1/financial-rule', { rule: { method: 'general' } })).status).toBe(403);
   });
 });
 
