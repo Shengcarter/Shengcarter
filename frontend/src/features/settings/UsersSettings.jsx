@@ -3,11 +3,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { KeyRound, LockOpen, Pencil, UserPlus } from 'lucide-react';
+import { KeyRound, LockOpen, Pencil, ShieldCheck, ShieldOff, UserPlus } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Avatar, Badge, Button, Card, DataTable, IconButton, Input, Modal, Pagination, PasswordInput,
-  SearchInput, Select, StatusBadge, Switch, applyServerErrors,
+  SearchInput, Select, StatusBadge, Switch, applyServerErrors, ConfirmDialog,
 } from '../../components/ui';
 import { http } from '../../api/client';
 import { formatDateTime } from '../../utils/format';
@@ -165,6 +165,8 @@ export function UsersSettings() {
   const [formOpen, setFormOpen] = useState(false);
   const [resetting, setResetting] = useState(null);
   const unlock = useApiMutation((id) => http.post(`/users/${id}/unlock`), [['users']]);
+  const resetTwoStep = useApiMutation((id) => http.post(`/users/${id}/reset-two-factor`), [['users']]);
+  const [resettingTwoStep, setResettingTwoStep] = useState(null);
 
   const columns = [
     {
@@ -181,6 +183,7 @@ export function UsersSettings() {
             <p className="truncate text-xs text-muted">{u.email}</p>
           </div>
           {u.isDemo ? <Badge tone="pink">Demo</Badge> : null}
+          {u.twoFactorEnabled ? <span title="Two-step sign-in is on"><ShieldCheck className="size-4 shrink-0 text-success" aria-label="Two-step sign-in on" /></span> : null}
         </div>
       ),
     },
@@ -204,6 +207,7 @@ export function UsersSettings() {
             <IconButton icon={LockOpen} size="sm" label="Unlock account" onClick={() => unlock.mutate(u.id)} />
           ) : null}
           <IconButton icon={KeyRound} size="sm" label="Reset password" onClick={() => setResetting(u)} />
+          {u.twoFactorEnabled ? <IconButton icon={ShieldOff} size="sm" label="Reset two-step sign-in" onClick={() => setResettingTwoStep(u)} /> : null}
           <IconButton icon={Pencil} size="sm" label="Edit user" onClick={() => { setEditing(u); setFormOpen(true); }} />
         </div>
       ),
@@ -248,6 +252,19 @@ export function UsersSettings() {
       <Pagination pagination={users.data?.pagination} onPageChange={(page) => setParams((p) => ({ ...p, page }))} />
       <UserForm open={formOpen} onClose={() => setFormOpen(false)} user={editing} />
       <ResetPasswordModal user={resetting} onClose={() => setResetting(null)} />
+      <ConfirmDialog
+        open={Boolean(resettingTwoStep)}
+        onClose={() => setResettingTwoStep(null)}
+        danger
+        loading={resetTwoStep.isPending}
+        title={`Reset two-step sign-in for ${resettingTwoStep?.fullName}?`}
+        message="Only for someone who lost their phone and their recovery codes. Two-step sign-in is turned off and they are signed out everywhere; if it is required for them, they set it up again right after signing in. Make sure it is really them asking."
+        confirmLabel="Reset two-step sign-in"
+        onConfirm={async () => {
+          await resetTwoStep.mutateAsync(resettingTwoStep.id).catch((e) => toast.error(e.message));
+          setResettingTwoStep(null);
+        }}
+      />
     </Card>
   );
 }

@@ -26,4 +26,11 @@ const resetPassword = z
   })
   .refine((d) => d.password === d.confirmPassword, { path: ['confirmPassword'], message: 'Passwords do not match' });
 
-module.exports = { login, changePassword, forgotPassword, resetPassword };
+// Two-step sign-in: a 6-digit authenticator code, or a recovery code (XXXXX-XXXXX).
+const code = z.string({ error: 'Enter the code' }).trim().min(6, 'Enter the code').max(20);
+const loginSecondStep = z.object({ challenge: z.string().min(20).max(2000), code });
+const twoFactorSetup = z.object({ password: z.string({ error: 'Password is required' }).min(1, 'Password is required').max(128) });
+const twoFactorConfirm = z.object({ code });
+const twoFactorChange = z.object({ password: z.string({ error: 'Password is required' }).min(1, 'Password is required').max(128), code });
+
+module.exports = { login, changePassword, forgotPassword, resetPassword, loginSecondStep, twoFactorSetup, twoFactorConfirm, twoFactorChange };

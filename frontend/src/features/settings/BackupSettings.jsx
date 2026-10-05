@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { DatabaseBackup, Download, HardDriveDownload, Info, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, DatabaseBackup, Download, HardDriveDownload, Info, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { Badge, Button, Card, CardHeader, ConfirmDialog, DataTable, EmptyState, ErrorState, Input, Select, SkeletonRows, StatusBadge, Switch } from '../../components/ui';
 import { downloadFile, http } from '../../api/client';
 import { formatDateTime, formatNumber } from '../../utils/format';
@@ -123,7 +123,7 @@ export function BackupSettings() {
 
   if (query.isPending) return <SkeletonRows rows={6} />;
   if (query.isError) return <ErrorState error={query.error} onRetry={query.refetch} />;
-  const { backups, settings } = query.data;
+  const { backups, settings, protection = {} } = query.data;
   const last = backups.find((b) => b.status === 'completed');
 
   return (
@@ -135,6 +135,19 @@ export function BackupSettings() {
           <p className="text-sm text-muted">{last ? `Last successful backup ${formatDateTime(last.completedAt || last.createdAt)} (${size(last.sizeBytes)}).` : 'No backup has been made yet.'}</p>
         </div>
         <Button icon={DatabaseBackup} loading={creating} onClick={create}>Back up now</Button>
+      </Card>
+
+      <Card className="space-y-2 p-5 text-sm">
+        <p className="font-medium">Protection of the backup files</p>
+        {[
+          [protection.encrypted, 'Encrypted', 'Files are encrypted: a stolen copy cannot be read without the key.', 'Not encrypted: set BACKUP_ENCRYPTION_KEY in .env (and keep the key somewhere safe off this server).'],
+          [protection.copied, 'Second copy', 'Every backup is also copied to the second location set in BACKUP_COPY_DIR.', 'Only on this server: set BACKUP_COPY_DIR in .env to a USB drive, NAS or cloud-synced folder, or download copies regularly.'],
+        ].map(([ok, label, good, bad]) => (
+          <p key={label} className={ok ? 'flex items-start gap-2 text-success' : 'flex items-start gap-2 text-warning'}>
+            {ok ? <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden /> : <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />}
+            <span><span className="font-medium">{label}:</span> {ok ? good : bad}</span>
+          </p>
+        ))}
       </Card>
 
       <ScheduleForm settings={settings} onSaved={refresh} />
@@ -178,7 +191,8 @@ export function BackupSettings() {
           <div className="space-y-2 text-sm text-muted">
             <p className="font-medium text-fg">Restoring a backup</p>
             <p>Restoring replaces all current data, so it is done on the server, not in the browser. Stop the application, then run:</p>
-            <pre className="overflow-x-auto rounded-xl bg-surface-2 px-4 py-3 font-mono text-xs text-fg">cd backend{'\n'}npm run restore -- storage/backups/&lt;file name&gt;.sql.gz</pre>
+            <pre className="overflow-x-auto rounded-xl bg-surface-2 px-4 py-3 font-mono text-xs text-fg">cd backend{'\n'}npm run restore -- storage/backups/&lt;file name&gt;</pre>
+            <p>An encrypted backup (<span className="font-mono text-fg">.enc</span>) needs the same <span className="font-mono text-fg">BACKUP_ENCRYPTION_KEY</span> in <span className="font-mono text-fg">.env</span>; it is checked in full before anything is changed, so a damaged or altered file is refused.</p>
             <p>On Windows you can also double-click <span className="font-mono text-fg">restore.bat</span> in the installation folder. Uploaded files (logo, photos, receipts) live in <span className="font-mono text-fg">backend/storage/uploads</span> — the Windows <span className="font-mono text-fg">backup.bat</span> copies them too.</p>
           </div>
         </div>

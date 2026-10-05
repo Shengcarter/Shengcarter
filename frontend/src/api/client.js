@@ -98,6 +98,9 @@ api.interceptors.response.use(
     if (response?.status === 403 && response.data?.code === 'PASSWORD_CHANGE_REQUIRED') {
       useAuthStore.getState().requirePasswordChange();
     }
+    if (response?.status === 403 && response.data?.code === 'TWO_FACTOR_SETUP_REQUIRED') {
+      useAuthStore.getState().requireTwoFactorSetup();
+    }
     return Promise.reject(normalizeError(error));
   },
 );
@@ -141,7 +144,13 @@ export async function downloadFile(url, params, fallbackName = 'download') {
 /** Open an authenticated PDF in a new tab (for printing). */
 export async function openFile(url, params) {
   const win = window.open('', '_blank');
-  const res = await api.get(url, { params, responseType: 'blob' });
+  let res;
+  try {
+    res = await api.get(url, { params, responseType: 'blob' });
+  } catch (error) {
+    win?.close();
+    throw error;
+  }
   const blobUrl = URL.createObjectURL(res.data);
   if (win) win.location.href = blobUrl;
   else window.location.href = blobUrl;

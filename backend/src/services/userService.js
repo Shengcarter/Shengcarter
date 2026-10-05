@@ -5,6 +5,7 @@ const ApiError = require('../utils/ApiError');
 const userModel = require('../models/userModel');
 const authService = require('./authService');
 const audit = require('./auditService');
+const guard = require('./privilegeGuard');
 
 async function getById(id) {
   const user = await userModel.findById(id);
@@ -40,6 +41,7 @@ async function linkEmployee(userId, employeeId, conn) {
 
 async function create(data, ctx) {
   await assertRoleExists(data.roleId);
+  await guard.assertCanAssignRole(ctx, data.roleId);
   await assertBranchExists(data.branchId);
   if (await userModel.emailExists(data.email)) {
     throw ApiError.validation([{ field: 'email', message: 'A user with this email already exists' }]);
@@ -63,7 +65,11 @@ async function create(data, ctx) {
 
 async function update(id, data, ctx) {
   const existing = await getById(id);
-  if (data.roleId) await assertRoleExists(data.roleId);
+  await guard.assertCanManageUser(ctx, existing);
+  if (data.roleId) {
+    await assertRoleExists(data.roleId);
+    await guard.assertCanAssignRole(ctx, data.roleId);
+  }
   if (data.branchId) await assertBranchExists(data.branchId);
   if (data.email && data.email !== existing.email && (await userModel.emailExists(data.email, id))) {
     throw ApiError.validation([{ field: 'email', message: 'A user with this email already exists' }]);
@@ -98,6 +104,7 @@ async function update(id, data, ctx) {
 /** Administrator sets a temporary password; the user must change it at next login. */
 async function resetPassword(id, password, ctx) {
   const user = await getById(id);
+  await guard.assertCanManageUser(ctx, user);
   const passwordHash = await authService.hashPassword(password);
   await db.withTransaction(async (conn) => {
     await userModel.setPassword(id, passwordHash, { mustChange: true }, conn);
@@ -108,6 +115,7 @@ async function resetPassword(id, password, ctx) {
 
 async function unlock(id, ctx) {
   const user = await getById(id);
+  await guard.assertCanManageUser(ctx, user);
   await db.query('UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?', [id]);
   await audit.record(ctx, { action: 'user.unlocked', entityType: 'user', entityId: id, description: `Unlocked ${user.fullName}` });
 }

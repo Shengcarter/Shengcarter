@@ -4,9 +4,10 @@ import { useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AlertCircle, LogIn } from 'lucide-react';
+import { AlertCircle, LogIn, ShieldCheck } from 'lucide-react';
 import { Button, Checkbox, Input, PasswordInput } from '../../components/ui';
-import { login } from '../../features/auth/api';
+import { login, loginSecondStep } from '../../features/auth/api';
+import { CodeInput } from '../../features/auth/TwoStep';
 import { useAuthStore } from '../../store/authStore';
 import { useDocumentTitle } from '../../hooks';
 
@@ -16,6 +17,46 @@ const schema = z.object({
   remember: z.boolean().optional(),
 });
 
+/** Second step: the code from the authenticator app, or a recovery code. */
+function CodeStep({ challenge, onSignedIn, onBack }) {
+  const [code, setCode] = useState('');
+  const [recovery, setRecovery] = useState(false);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      onSignedIn(await loginSecondStep({ challenge, code }));
+    } catch (err) {
+      if (err.code === 'CHALLENGE_EXPIRED') onBack(err.message);
+      else setError(err.message);
+      setCode('');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form onSubmit={submit} noValidate className="mt-8 space-y-5">
+      <div className="flex items-start gap-3 rounded-xl border border-line bg-surface-2 px-4 py-3 text-sm">
+        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
+        <p>{recovery ? 'Enter one of the recovery codes you saved when you set up two-step sign-in.' : 'Open the authenticator app on your phone and enter the 6-digit code for this account.'}</p>
+      </div>
+      <CodeInput value={code} onChange={setCode} recovery={recovery} label={recovery ? 'Recovery code' : 'Code'} error={error} autoFocus />
+      <Button type="submit" size="lg" className="w-full" loading={busy} disabled={recovery ? code.replace(/[^A-Z0-9]/g, '').length !== 10 : code.length !== 6}>
+        Verify and sign in
+      </Button>
+      <div className="flex items-center justify-between text-sm">
+        <button type="button" className="text-muted hover:text-fg" onClick={() => onBack(null)}>← Back</button>
+        <button type="button" className="font-medium text-accent hover:underline" onClick={() => { setRecovery((v) => !v); setCode(''); setError(null); }}>
+          {recovery ? 'Use the app instead' : 'Lost your phone? Use a recovery code'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export default function LoginPage() {
   useDocumentTitle('Sign in');
   const navigate = useNavigate();
@@ -24,6 +65,7 @@ export default function LoginPage() {
   const signedOut = new URLSearchParams(location.search).has('signedOut');
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState(null);
+  const [challenge, setChallenge] = useState(null);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(schema),
@@ -38,12 +80,38 @@ export default function LoginPage() {
       // is set, so no page starts from the old data.
       queryClient.clear();
       const session = await login(values);
-      const next = location.state?.from?.pathname || '/';
-      navigate(session.user.mustChangePassword ? '/change-password' : next, { replace: true });
+      if (session.twoFactorRequired) {
+        setChallenge(session.challenge);
+        return;
+      }
+      signedIn(session);
     } catch (error) {
       setServerError(error.message);
     }
   };
+
+  function signedIn(session) {
+    const next = location.state?.from?.pathname || '/';
+    navigate(session.user.mustChangePassword ? '/change-password' : session.user.twoFactorSetupRequired ? '/setup-two-step' : next, { replace: true });
+  }
+
+  if (challenge) {
+    return (
+      <div>
+        <p className="text-xs font-semibold tracking-[0.25em] text-accent uppercase">Two-step sign-in</p>
+        <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight">Enter your code</h1>
+        <p className="mt-2 text-sm text-muted">ZOLA STYLISH MANAGEMENT SYSTEM</p>
+        <CodeStep
+          challenge={challenge}
+          onSignedIn={signedIn}
+          onBack={(message) => {
+            setChallenge(null);
+            setServerError(message);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div>

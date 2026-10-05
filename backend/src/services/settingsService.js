@@ -149,9 +149,12 @@ const SETTINGS = {
   'backup.auto_enabled': { schema: z.boolean() },
   'backup.cron': { schema: z.string().trim().refine((v) => cron.validate(v), 'Invalid cron expression') },
   'backup.retention_count': { schema: z.number().int().min(1).max(365) },
+
+  // Security: who must use two-step sign-in (an authenticator code after the password).
+  'security.two_factor_required': { schema: z.enum(['none', 'admins', 'all']), public: true },
 };
 
-const GROUPS = ['business', 'financial', 'system', 'notifications', 'integrations', 'loyalty', 'backup'];
+const GROUPS = ['business', 'financial', 'system', 'notifications', 'integrations', 'loyalty', 'backup', 'security'];
 
 /** Fallback values used when a key is missing from the database. */
 const DEFAULTS = {
@@ -190,6 +193,7 @@ const DEFAULTS = {
   'backup.auto_enabled': true,
   'backup.cron': '0 23 * * *',
   'backup.retention_count': 14,
+  'security.two_factor_required': 'none',
 };
 
 let cache = new Map();

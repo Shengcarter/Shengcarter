@@ -3,11 +3,36 @@ import { queryClient } from '../../api/queryClient';
 import { useAuthStore } from '../../store/authStore';
 import { announceSignOut, goToSignIn } from './sessionSync';
 
+/** Step 1. With two-step sign-in on, returns { twoFactorRequired, challenge } and no session yet. */
 export async function login(values) {
   const res = await http.post('/auth/login', values);
+  if (res.data.twoFactorRequired) return res.data;
   useAuthStore.getState().setSession(res.data);
   return res.data;
 }
+
+/** Step 2: the code from the authenticator app (or a recovery code). */
+export async function loginSecondStep(values) {
+  const res = await http.post('/auth/login/two-factor', values);
+  useAuthStore.getState().setSession(res.data);
+  return res.data;
+}
+
+/** Two-step sign-in for the signed-in user. */
+export const twoFactorApi = {
+  status: () => http.get('/auth/two-factor').then((r) => r.data),
+  setup: (password) => http.post('/auth/two-factor/setup', { password }).then((r) => r.data),
+  confirm: async (code) => {
+    const res = await http.post('/auth/two-factor/confirm', { code });
+    useAuthStore.getState().setSession(res.data.session);
+    return res.data.recoveryCodes;
+  },
+  disable: async (values) => {
+    const res = await http.post('/auth/two-factor/disable', values);
+    useAuthStore.getState().setSession(res.data);
+  },
+  recoveryCodes: (values) => http.post('/auth/two-factor/recovery-codes', values).then((r) => r.data.recoveryCodes),
+};
 
 /**
  * Sign out: the server ends the session (both tokens stop working), this tab

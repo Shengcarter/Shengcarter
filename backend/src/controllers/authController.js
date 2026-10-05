@@ -2,6 +2,7 @@
 
 const config = require('../config');
 const authService = require('../services/authService');
+const twoFactor = require('../services/twoFactorService');
 const { sendSuccess } = require('../utils/response');
 
 // The refresh token is only ever sent to /api/auth, never readable by scripts
@@ -36,8 +37,38 @@ const meta = (req) => ({
 
 async function login(req, res) {
   const result = await authService.login(req.body, meta(req), req.cookies?.[config.auth.refreshCookieName]);
+  // Password right, code still needed: no session (and no cookie) yet.
+  if (result.twoFactor) return sendSuccess(res, { twoFactorRequired: true, ...result.twoFactor }, 'Enter the code from your authenticator app');
+  setRefreshCookie(res, result.refresh);
+  return sendSuccess(res, { accessToken: result.accessToken, ...result.session }, 'Signed in successfully');
+}
+
+async function loginSecondStep(req, res) {
+  const result = await authService.loginSecondStep(req.body, meta(req), req.cookies?.[config.auth.refreshCookieName]);
   setRefreshCookie(res, result.refresh);
   sendSuccess(res, { accessToken: result.accessToken, ...result.session }, 'Signed in successfully');
+}
+
+async function twoFactorStatus(req, res) {
+  sendSuccess(res, await twoFactor.status(req.user));
+}
+
+async function twoFactorSetup(req, res) {
+  sendSuccess(res, await twoFactor.startSetup(req.user, req.body, req.ctx), 'Scan the code with your authenticator app');
+}
+
+async function twoFactorConfirm(req, res) {
+  const result = await twoFactor.confirmSetup(req.user, req.body, req.ctx);
+  sendSuccess(res, { ...result, session: await authService.buildSession(req.user.id, req.ctx.branchId) }, 'Two-step sign-in is on');
+}
+
+async function twoFactorDisable(req, res) {
+  await twoFactor.disable(req.user, req.body, req.ctx);
+  sendSuccess(res, await authService.buildSession(req.user.id, req.ctx.branchId), 'Two-step sign-in is off');
+}
+
+async function twoFactorRecoveryCodes(req, res) {
+  sendSuccess(res, await twoFactor.regenerateRecoveryCodes(req.user, req.body, req.ctx), 'New recovery codes created; the old ones no longer work');
 }
 
 async function refresh(req, res) {
@@ -76,4 +107,7 @@ async function resetPassword(req, res) {
   sendSuccess(res, null, 'Your password has been reset. You can now sign in.');
 }
 
-module.exports = { login, refresh, logout, me, changePassword, forgotPassword, resetPassword };
+module.exports = {
+  login, loginSecondStep, refresh, logout, me, changePassword, forgotPassword, resetPassword,
+  twoFactorStatus, twoFactorSetup, twoFactorConfirm, twoFactorDisable, twoFactorRecoveryCodes,
+};

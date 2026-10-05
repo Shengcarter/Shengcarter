@@ -5,7 +5,10 @@ const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const config = require('../config');
+const logger = require('../config/logger');
 const ApiError = require('../utils/ApiError');
+const scanner = require('../services/malwareScanner');
+const audit = require('../services/auditService');
 
 /**
  * Safe file uploads.
@@ -13,7 +16,33 @@ const ApiError = require('../utils/ApiError');
  *   - The file content is checked against its magic bytes, so a renamed
  *     executable is rejected even if the extension and MIME type look fine.
  *   - Files are stored under random names (no user-controlled paths).
+ *   - With CLAMAV_HOST set, every file is scanned for viruses before it is
+ *     kept; MALWARE_SCAN_REQUIRED=true refuses uploads while the scanner is down.
+ *   - Expense receipts are private: served only through the API to people
+ *     who may see expenses (PRIVATE_FOLDERS), never as public /uploads URLs.
  */
+const PRIVATE_FOLDERS = ['expenses'];
+
+/** Scan an upload; returns an ApiError to refuse it, or null to keep it. */
+async function virusCheck(req, buffer, field, name) {
+  if (!scanner.isEnabled()) return null;
+  const result = await scanner.scan(buffer);
+  if (result.status === 'clean') return null;
+  if (result.status === 'infected') {
+    logger.warn({ field, signature: result.signature, userId: req.user?.id, url: req.originalUrl }, 'Upload blocked by the virus scanner');
+    await audit.record(req.ctx, {
+      action: 'upload.malware_blocked', entityType: 'upload',
+      description: `Blocked an uploaded file containing ${result.signature}`,
+      metadata: { field, fileName: String(name || '').slice(0, 150), signature: result.signature, path: req.originalUrl },
+    });
+    return ApiError.validation([{ field, message: 'This file was rejected by the virus scanner and has not been saved.' }]);
+  }
+  logger.warn({ error: result.error }, 'Virus scanner unavailable');
+  if (scanner.isRequired()) {
+    return new ApiError(503, 'Uploads are paused because the virus scanner is not available. Try again in a few minutes or contact your administrator.', { code: 'SCANNER_UNAVAILABLE' });
+  }
+  return null;
+}
 const FILE_TYPES = {
   image: {
     '.jpg': { mime: ['image/jpeg'], magic: [[0xff, 0xd8, 0xff]] },
@@ -87,10 +116,30 @@ function singleUpload(field, folder, kinds = ['image']) {
         fs.unlink(req.file.path, () => {});
         return next(ApiError.validation([{ field, message: 'File content does not match its type' }]));
       }
-      req.file.publicPath = `/uploads/${folder}/${req.file.filename}`;
-      return next();
+      return virusCheck(req, fs.readFileSync(req.file.path), field, req.file.originalname).then((refusal) => {
+        if (refusal) {
+          fs.unlink(req.file.path, () => {});
+          return next(refusal);
+        }
+        req.file.publicPath = `/uploads/${folder}/${req.file.filename}`;
+        return next();
+      }, (error) => {
+        fs.unlink(req.file.path, () => {});
+        next(error);
+      });
     });
   };
+}
+
+/**
+ * Absolute path of an uploaded file from its stored /uploads/… path, or null
+ * if it would point outside the upload directory.
+ */
+function resolveUploadedFile(publicPath) {
+  if (!publicPath || !publicPath.startsWith('/uploads/')) return null;
+  const root = path.resolve(config.paths.uploads);
+  const resolved = path.resolve(root, publicPath.replace(/^\/uploads\//, ''));
+  return resolved.startsWith(root + path.sep) ? resolved : null;
 }
 
 /** Delete a previously uploaded file given its public path. */
@@ -132,9 +181,9 @@ function spreadsheetUpload(field = 'file') {
       const bytes = req.file.buffer;
       const valid = ext === '.xlsx' ? bytes.subarray(0, 4).equals(XLSX_MAGIC) : !bytes.includes(0);
       if (!valid) return next(ApiError.validation([{ field, message: `This file is not a valid ${ext === '.xlsx' ? 'Excel workbook' : 'CSV text file'}.` }]));
-      return next();
+      return virusCheck(req, bytes, field, req.file.originalname).then((refusal) => next(refusal || undefined), next);
     });
   };
 }
 
-module.exports = { singleUpload, spreadsheetUpload, removeUploadedFile };
+module.exports = { singleUpload, spreadsheetUpload, removeUploadedFile, resolveUploadedFile, PRIVATE_FOLDERS };

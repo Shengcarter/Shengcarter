@@ -20,6 +20,7 @@ userRouter.get('/:id', validate({ params: idParam }), users.get);
 userRouter.patch('/:id', validate({ params: idParam, body: v.updateUser }), users.update);
 userRouter.post('/:id/reset-password', validate({ params: idParam, body: v.resetUserPassword }), users.resetPassword);
 userRouter.post('/:id/unlock', validate({ params: idParam }), users.unlock);
+userRouter.post('/:id/reset-two-factor', validate({ params: idParam }), users.resetTwoFactor);
 
 // ---- /api/roles -------------------------------------------------------------
 const roleRouter = Router();
@@ -39,6 +40,10 @@ branchRouter.patch('/:id', requirePermission('branches.manage'), validate({ para
 const settingsRouter = Router();
 settingsRouter.get('/app', settings.app);
 settingsRouter.get('/', requirePermission('settings.manage'), settings.all);
+settingsRouter.get('/security-check', requirePermission('settings.manage'), async (_req, res) => {
+  const { check } = require('../services/securityCheckService');
+  res.json({ success: true, message: 'OK', data: await check() });
+});
 settingsRouter.post('/business/logo', requirePermission('settings.manage'), singleUpload('logo', 'branding'), settings.uploadLogo);
 settingsRouter.delete('/business/logo', requirePermission('settings.manage'), settings.removeLogo);
 settingsRouter.post(

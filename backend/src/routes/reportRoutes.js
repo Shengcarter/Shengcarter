@@ -1,6 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
+const config = require('../config');
 const { z } = require('zod');
 const validate = require('../middleware/validate');
 const { requirePermission, hasPermission } = require('../middleware/auth');
@@ -96,7 +97,12 @@ const backupRouter = Router();
 backupRouter.use(requirePermission('backups.manage'));
 
 backupRouter.get('/', async (_req, res) => {
-  sendSuccess(res, { backups: await backupService.list(), settings: settingsService.getGroup('backup') });
+  sendSuccess(res, {
+    backups: await backupService.list(),
+    settings: settingsService.getGroup('backup'),
+    // Whether files are encrypted and copied to a second place (set in .env, never the values).
+    protection: { encrypted: Boolean(config.backup.encryptionKey), copied: Boolean(config.backup.copyDir) },
+  });
 });
 backupRouter.post('/', heavyLimiter, async (req, res) => {
   sendCreated(res, await backupService.createBackup({ type: 'manual', ctx: req.ctx }), 'Backup created successfully');

@@ -264,10 +264,11 @@ Certbot adds the certificate to the Nginx site and redirects HTTP to HTTPS. Then
 ```ini
 APP_URL=https://salon.example.com
 COOKIE_SECURE=true
+FORCE_HTTPS=true
 TRUST_PROXY=true
 ```
 
-and restart (`sudo systemctl restart zola-stylish`). With `COOKIE_SECURE=true` the app marks its session cookie *Secure*, sends `Strict-Transport-Security` and upgrades insecure requests. Test at <https://www.ssllabs.com/ssltest/> — expect grade A.
+and restart (`sudo systemctl restart zola-stylish`). With `COOKIE_SECURE=true` the app marks its session cookie *Secure*, sends `Strict-Transport-Security` (one year) and upgrades insecure requests; `FORCE_HTTPS=true` also redirects any plain-HTTP page to HTTPS and refuses API calls over HTTP. Test at <https://www.ssllabs.com/ssltest/> — expect grade A.
 
 ### Your own certificate
 
@@ -369,7 +370,12 @@ Docker: `git pull && docker compose up -d --build` (migrations run automatically
 - [ ] Strong, unique database password; MySQL reachable only from the server (not port-forwarded, not published)
 - [ ] `.env` readable only by the service account (`chmod 600 .env`) and never committed or emailed
 - [ ] Administrator changed the temporary password at first sign-in; each staff member has their **own** account with the right role
-- [ ] Internet-facing: HTTPS works, `COOKIE_SECURE=true`, `TRUST_PROXY` matches the number of proxies, `HOST=127.0.0.1` behind Nginx
+- [ ] Internet-facing: HTTPS works, `COOKIE_SECURE=true`, `FORCE_HTTPS=true`, `TRUST_PROXY` matches the number of proxies, `HOST=127.0.0.1` behind Nginx
+- [ ] The application's MySQL account is its own (never `root`) and limited to its database
+- [ ] Two-step sign-in required for administrators (*Settings → Security*), and every administrator has set it up and saved their recovery codes
+- [ ] `BACKUP_ENCRYPTION_KEY` set (and stored safely off the server) and `BACKUP_COPY_DIR` pointing to a second location
+- [ ] Virus scanning of uploads: `CLAMAV_HOST` (Docker: `--profile antivirus`) and `MALWARE_SCAN_REQUIRED=true`
+- [ ] *Settings → Security* shows no failed checks; GitHub secret scanning, push protection and Dependabot alerts switched on
 - [ ] `APP_URL` is the address people actually use (QR codes and links)
 - [ ] Business name, logo, currency, tax, time zone and receipt settings filled in (*Settings*)
 - [ ] Demo data removed (`npm --prefix backend run demo:clear`) and `SEED_DEMO_DATA=false`

@@ -1,10 +1,12 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { Router } = require('express');
 const { z } = require('zod');
 const validate = require('../middleware/validate');
 const { requirePermission } = require('../middleware/auth');
-const { singleUpload, removeUploadedFile } = require('../middleware/upload');
+const { singleUpload, removeUploadedFile, resolveUploadedFile } = require('../middleware/upload');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess, sendCreated, sendPaginated } = require('../utils/response');
 const { idParam, booleanish } = require('../validators/common');
@@ -177,6 +179,19 @@ expenseRouter.post('/:id/attachment', requirePermission('expenses.manage'), vali
     throw error;
   }
   sendSuccess(res, { attachment: req.file.publicPath }, 'Receipt attached');
+});
+// The receipt itself, only for people who may see this branch's expenses.
+expenseRouter.get('/:id/attachment', requirePermission('expenses.view'), validate({ params: idParam }), async (req, res) => {
+  const expense = await expenseService.getById(req.params.id, req.ctx);
+  const file = resolveUploadedFile(expense.attachment);
+  if (!file || !fs.existsSync(file)) throw ApiError.notFound('This expense has no receipt');
+  const ext = path.extname(file).toLowerCase();
+  const types = { '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
+  res.setHeader('Content-Type', types[ext] || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `inline; filename="receipt-${expense.id}${ext}"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.sendFile(file);
 });
 expenseRouter.delete('/:id/attachment', requirePermission('expenses.manage'), validate({ params: idParam }), async (req, res) => {
   removeUploadedFile(await expenseService.setAttachment(req.params.id, null, req.ctx));

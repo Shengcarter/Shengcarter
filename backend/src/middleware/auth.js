@@ -11,6 +11,10 @@ const SUPER_ADMIN = 'super_admin';
 
 // Routes a user who must change their password is still allowed to call.
 const PASSWORD_CHANGE_ALLOWLIST = new Set(['/api/auth/me', '/api/auth/change-password', '/api/auth/logout']);
+// Routes a user who must first set up two-step sign-in may call.
+const TWO_FACTOR_SETUP_ALLOWLIST = new Set([
+  '/api/auth/me', '/api/auth/logout', '/api/auth/change-password', '/api/auth/two-factor', '/api/auth/two-factor/setup', '/api/auth/two-factor/confirm',
+]);
 
 function readBearerToken(req) {
   const header = req.headers.authorization || '';
@@ -73,7 +77,7 @@ async function authenticate(req, _res, next) {
   // Loaded on every request so deactivated accounts and role changes apply immediately.
   const row = await db.queryOne(
     `SELECT u.id, u.full_name, u.email, u.phone, u.avatar, u.role_id, u.branch_id, u.is_active,
-            u.must_change_password, r.slug AS role_slug, r.name AS role_name, e.id AS employee_id
+            u.must_change_password, u.totp_enabled_at, r.slug AS role_slug, r.name AS role_name, e.id AS employee_id
      FROM users u
      JOIN roles r ON r.id = u.role_id
      LEFT JOIN employees e ON e.user_id = u.id
@@ -96,11 +100,18 @@ async function authenticate(req, _res, next) {
     employeeId: row.employee_id,
     mustChangePassword: Boolean(row.must_change_password),
     isSuperAdmin: row.role_slug === SUPER_ADMIN,
+    twoFactorEnabled: Boolean(row.totp_enabled_at),
     permissions,
   };
 
-  if (user.mustChangePassword && !PASSWORD_CHANGE_ALLOWLIST.has(req.originalUrl.split('?')[0])) {
+  const path = req.originalUrl.split('?')[0];
+  if (user.mustChangePassword && !PASSWORD_CHANGE_ALLOWLIST.has(path)) {
     throw ApiError.forbidden('You must change your password before continuing', { code: 'PASSWORD_CHANGE_REQUIRED' });
+  }
+  // Loaded here, not at the top: the two-step service depends on settings and audit.
+  const { isRequiredFor } = require('../services/twoFactorService');
+  if (!user.twoFactorEnabled && isRequiredFor(user) && !TWO_FACTOR_SETUP_ALLOWLIST.has(path)) {
+    throw ApiError.forbidden('Set up two-step sign-in before continuing', { code: 'TWO_FACTOR_SETUP_REQUIRED' });
   }
 
   req.user = user;
@@ -119,11 +130,28 @@ function hasPermission(user, code) {
   return Boolean(user) && (user.isSuperAdmin || user.permissions.has(code));
 }
 
-/** Allow the request when the user holds ANY of the given permissions. */
+// The same refusal is logged once a minute per user and address, not on every retry.
+const recentDenials = new Map();
+function logDenial(req, codes) {
+  const key = `${req.user.id}:${req.method}:${req.baseUrl}${req.route?.path || req.path}`;
+  const now = Date.now();
+  if (recentDenials.get(key) > now - 60_000) return;
+  recentDenials.set(key, now);
+  if (recentDenials.size > 5000) recentDenials.clear();
+  // Required here, not at the top: the audit service is loaded after this module.
+  require('../services/auditService').record(req.ctx, {
+    action: 'auth.permission_denied', entityType: 'user', entityId: req.user.id,
+    description: `Refused ${req.method} ${req.originalUrl.split('?')[0]}: needs ${codes.join(' or ')}`,
+    metadata: { method: req.method, path: req.originalUrl.split('?')[0], needs: codes },
+  });
+}
+
+/** Allow the request when the user holds ANY of the given permissions; log a refusal. */
 function requirePermission(...codes) {
   return (req, _res, next) => {
     if (!req.user) throw ApiError.unauthorized();
     if (codes.some((code) => hasPermission(req.user, code))) return next();
+    logDenial(req, codes);
     throw ApiError.forbidden();
   };
 }

@@ -17,6 +17,7 @@
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
     "user:reset-password": "node scripts/reset-password.js",
+    "user:reset-two-step": "node scripts/reset-two-step.js",
     "test": "jest --runInBand"
   },
   "dependencies": {
@@ -37,6 +38,7 @@
     "mysql2": "^3.24.4",
     "node-cron": "^4.6.0",
     "nodemailer": "^10.0.12",
+    "otplib": "^12.0.1",
     "pdfkit": "^0.20.2",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
