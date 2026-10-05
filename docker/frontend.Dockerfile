@@ -1,5 +1,5 @@
 # ZOLA STYLISH MANAGEMENT SYSTEM — web application image (built with Vite, served by Nginx)
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
